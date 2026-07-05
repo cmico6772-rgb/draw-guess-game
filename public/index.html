@@ -94,6 +94,7 @@
         </div>
 
         <button id="btn-start" class="btn btn-primary" disabled>Start Game</button>
+        <button id="btn-reset-scores" class="btn btn-secondary hidden">Reset Scores</button>
         <p id="lobby-note" class="hint-small"></p>
         <button id="btn-leave-lobby" class="btn btn-text">Leave Room</button>
       </div>
@@ -225,8 +226,9 @@
       <div class="overlay-card">
         <h2 class="final-title">Final Ranking</h2>
         <ol id="final-ranking" class="final-ranking"></ol>
-        <button id="btn-play-again" class="btn btn-primary hidden">Play Again</button>
-        <button id="btn-back-home" class="btn btn-text">Back to Home</button>
+        <button id="btn-back-room" class="btn btn-primary hidden">Back to Room</button>
+        <p id="gameend-wait-note" class="hint-small hidden">Waiting for the host to return to the room...</p>
+        <button id="btn-leave-gameend" class="btn btn-text">Leave Room</button>
       </div>
     </div>
 

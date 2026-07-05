@@ -423,7 +423,6 @@ class Room {
       return;
     }
 
-    this.players.forEach((p) => { p.score = 0; });
     this.turnOrder = this.activePlayers().map((p) => p.playerId);
     this.totalRounds = this.turnOrder.length;
     this.turnIndex = -1;
@@ -434,6 +433,52 @@ class Room {
     this.io.to(this.code).emit('gameStarted', { settings: this.settings });
     this.broadcastPlayers();
     this.nextTurnOrEnd();
+  }
+
+  resetGameSession() {
+    this.clearTimers();
+    this.clearWaitTimers();
+    this.drawerWaiting = false;
+    this.canSkipDrawer = false;
+    this.pausedTimeLeft = 0;
+    this.turnIndex = -1;
+    this.roundNumber = 0;
+    this.totalRounds = 0;
+    this.turnOrder = [];
+    this.currentDrawerId = null;
+    this.word = null;
+    this.wordChoices = [];
+    this.correctGuessers = new Set();
+    this.roundGains = {};
+    this.resetDrawing();
+  }
+
+  returnToLobby(bySocketId) {
+    const host = this.getPlayerBySocket(bySocketId);
+    if (!host || host.playerId !== this.hostPlayerId) return;
+    if (this.phase !== 'gameend') return;
+
+    this.resetGameSession();
+    this.phase = 'lobby';
+
+    this.io.to(this.code).emit('clearCanvas');
+    this.broadcastPlayers();
+    this.broadcastSettings();
+    this.io.to(this.code).emit('returnToLobby', {
+      settings: this.settings,
+      players: this.serializePlayers(),
+    });
+  }
+
+  resetScores(bySocketId) {
+    const host = this.getPlayerBySocket(bySocketId);
+    if (!host || host.playerId !== this.hostPlayerId) return;
+    if (this.phase !== 'lobby' && this.phase !== 'gameend') return;
+
+    this.players.forEach((p) => { p.score = 0; });
+    this.roundGains = {};
+    this.broadcastPlayers();
+    this.systemMessage('Scores have been reset.');
   }
 
   nextTurnOrEnd() {

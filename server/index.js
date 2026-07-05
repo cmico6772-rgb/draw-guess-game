@@ -164,9 +164,14 @@ io.on('connection', (socket) => {
     if (room) room.handleHint(socket.id, text);
   });
 
-  socket.on('playAgain', () => {
+  socket.on('returnToLobby', () => {
     const room = currentRoom();
-    if (room) room.startGame(socket.id);
+    if (room) room.returnToLobby(socket.id);
+  });
+
+  socket.on('resetScores', () => {
+    const room = currentRoom();
+    if (room) room.resetScores(socket.id);
   });
 
   socket.on('leaveRoom', () => {

@@ -196,6 +196,10 @@
   // ---------- Lobby ----------
   $('btn-start').addEventListener('click', function () { socket.emit('startGame'); });
 
+  $('btn-reset-scores').addEventListener('click', function () {
+    if (amHost()) socket.emit('resetScores');
+  });
+
   $('btn-leave-lobby').addEventListener('click', function () {
     socket.emit('leaveRoom');
     showScreen('home');
@@ -257,6 +261,7 @@
     state.players.forEach(function (p) {
       var li = document.createElement('li');
       var name = document.createElement('span');
+      name.className = 'lobby-name';
       name.textContent = p.name + (p.id === state.me ? ' (you)' : '');
       if (!p.connected) name.textContent += ' (offline)';
       li.appendChild(name);
@@ -266,6 +271,10 @@
         b.textContent = 'Host';
         li.appendChild(b);
       }
+      var scoreEl = document.createElement('span');
+      scoreEl.className = 'lobby-score';
+      scoreEl.textContent = (p.score || 0) + ' pts';
+      li.appendChild(scoreEl);
       if (host && p.id !== state.me && !p.isHost) {
         var rm = document.createElement('button');
         rm.className = 'btn-remove';
@@ -279,14 +288,15 @@
     });
     $('lobby-count').textContent = state.players.length;
 
-    var host = amHost();
     var startBtn = $('btn-start');
+    var resetBtn = $('btn-reset-scores');
     startBtn.classList.toggle('hidden', !host);
+    resetBtn.classList.toggle('hidden', !host);
     var enough = state.players.length >= 2;
     startBtn.disabled = !enough;
     $('lobby-note').textContent = host
       ? (enough ? '' : 'Need at least 2 players.')
-      : 'Waiting for the host to start...';
+      : 'Waiting for the host to start a new game.';
 
     renderSettings();
   }
@@ -783,7 +793,35 @@
     if (amHost() && state.canSkipDrawer) socket.emit('skipDrawerRound');
   });
 
-  // ---------- Enter game ----------
+  function resetClientGameState() {
+    state.isDrawer = false;
+    state.word = null;
+    state.wordLength = 0;
+    state.round = 0;
+    state.totalRounds = 0;
+    state.drawerName = '';
+    state.drawerWaiting = false;
+    state.canSkipDrawer = false;
+    state.waitLeft = 0;
+    state.bgMode = 'normal';
+    history = [];
+    liveStroke = null;
+    $('chat-log').innerHTML = '';
+    $('hint-display').textContent = '';
+    $('canvas-status').textContent = '';
+    $('word-display').textContent = '';
+    applyBgMode('normal');
+    renderAll();
+    setupToolbarVisibility();
+    renderDrawerWait();
+  }
+
+  function enterLobbyScreen() {
+    hideAllOverlays();
+    showScreen('lobby');
+    renderLobby();
+  }
+
   function enterGameScreen() {
     if (!screens.game.classList.contains('active')) {
       showScreen('game');
@@ -1043,8 +1081,10 @@
 
   // ---- chat / hints / guesses ----
   socket.on('chat', function (data) {
-    if (data.system) addChat({ cls: 'system', text: data.text });
-    else addChat({ who: data.name, text: data.text });
+    if (data.system) {
+      addChat({ cls: 'system', text: data.text });
+      if (screens.lobby.classList.contains('active')) toast(data.text);
+    } else addChat({ who: data.name, text: data.text });
   });
   socket.on('correctGuess', function (data) {
     var pts = data.points != null ? data.points : 0;
@@ -1108,16 +1148,29 @@
       li.appendChild(score);
       ol.appendChild(li);
     });
-    $('btn-play-again').classList.toggle('hidden', state.hostId !== state.me);
+    var host = amHost();
+    $('btn-back-room').classList.toggle('hidden', !host);
+    $('gameend-wait-note').classList.toggle('hidden', host);
     showOverlay('overlay-gameend');
   });
 
-  $('btn-play-again').addEventListener('click', function () { socket.emit('playAgain'); });
-  $('btn-back-home').addEventListener('click', function () {
+  $('btn-back-room').addEventListener('click', function () {
+    if (amHost()) socket.emit('returnToLobby');
+  });
+
+  $('btn-leave-gameend').addEventListener('click', function () {
     socket.emit('leaveRoom');
     hideAllOverlays();
     showScreen('home');
     renderRecentRooms();
+  });
+
+  socket.on('returnToLobby', function (data) {
+    state.phase = 'lobby';
+    if (data && data.settings) state.settings = data.settings;
+    if (data && data.players) state.players = data.players;
+    resetClientGameState();
+    enterLobbyScreen();
   });
 
   socket.on('reconnect', function () {
