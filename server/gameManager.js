@@ -11,9 +11,13 @@ const MIN_PLAYERS = 2;
 const ROUND_TIME_OPTIONS = [180, 420, 600];
 const DEFAULT_SETTINGS = { mode: 'default', roundTime: 180 };
 
-const GUESS_POINTS = { 1: 100, 2: 80, 3: 60, 4: 40 };
-const GUESS_POINTS_OTHER = 20;
-const DRAWER_BONUS = 50;
+const DRAWER_BONUS_PER_GUESSER = 20;
+
+function computeGuesserPoints(timeLeftMs, totalRoundTimeSeconds) {
+  const totalMs = totalRoundTimeSeconds * 1000;
+  if (totalMs <= 0) return 1;
+  return Math.max(1, Math.round((timeLeftMs / totalMs) * 100));
+}
 
 function makeRoomCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -594,14 +598,26 @@ class Room {
 
   registerCorrectGuess(player) {
     this.correctGuessers.add(player.playerId);
-    const order = this.correctGuessers.size;
-    const points = GUESS_POINTS[order] || GUESS_POINTS_OTHER;
+
+    const timeLeftMs = Math.max(0, this.roundEndAt - Date.now());
+    const points = computeGuesserPoints(timeLeftMs, this.settings.roundTime);
 
     player.score += points;
     this.roundGains[player.playerId] = (this.roundGains[player.playerId] || 0) + points;
 
-    this.systemMessage(`${player.name} guessed the word! (+${points})`);
-    this.io.to(this.code).emit('correctGuess', { id: player.playerId, name: player.name });
+    this.io.to(this.code).emit('correctGuess', {
+      id: player.playerId,
+      name: player.name,
+      points,
+    });
+
+    const drawer = this.getPlayerById(this.currentDrawerId);
+    if (drawer) {
+      drawer.score += DRAWER_BONUS_PER_GUESSER;
+      this.roundGains[drawer.playerId] = (this.roundGains[drawer.playerId] || 0) + DRAWER_BONUS_PER_GUESSER;
+      this.systemMessage(`Drawer earned +${DRAWER_BONUS_PER_GUESSER} because ${player.name} guessed correctly.`);
+    }
+
     this.broadcastPlayers();
 
     const guessers = this.activePlayers().filter((p) => p.playerId !== this.currentDrawerId);
@@ -719,13 +735,6 @@ class Room {
     this.drawerWaiting = false;
     this.canSkipDrawer = false;
     this.phase = 'roundend';
-
-    const correctCount = this.correctGuessers.size;
-    const drawer = this.getPlayerById(this.currentDrawerId);
-    if (drawer && correctCount > 0 && !opts.skipNoBonus) {
-      drawer.score += DRAWER_BONUS;
-      this.roundGains[drawer.playerId] = (this.roundGains[drawer.playerId] || 0) + DRAWER_BONUS;
-    }
 
     this.broadcastPlayers();
     this.broadcastDrawerWait();

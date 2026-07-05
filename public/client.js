@@ -1047,7 +1047,8 @@
     else addChat({ who: data.name, text: data.text });
   });
   socket.on('correctGuess', function (data) {
-    addChat({ cls: 'correct', text: '\uD83C\uDF89 ' + data.name + ' guessed the word!' });
+    var pts = data.points != null ? data.points : 0;
+    addChat({ cls: 'correct', text: data.name + ' guessed correctly! +' + pts });
   });
   socket.on('hint', function (data) {
     addChat({ cls: 'hint', text: '\uD83D\uDCA1 Hint: ' + data.text });
