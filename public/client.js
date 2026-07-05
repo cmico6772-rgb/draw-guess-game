@@ -1014,7 +1014,6 @@
     var w = $('free-word-input').value.trim();
     if (!w) return;
     socket.emit('chooseWord', { word: w });
-    hideOverlay('overlay-freeword');
   });
 
   socket.on('roundStart', function (data) {

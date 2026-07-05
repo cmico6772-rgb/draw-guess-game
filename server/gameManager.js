@@ -1,6 +1,11 @@
 'use strict';
 
-const { pickWords } = require('./words');
+const {
+  pickWords,
+  normalizeWordKey,
+  NOT_ENOUGH_WORDS_MSG,
+  WORD_ALREADY_USED_MSG,
+} = require('./words');
 
 const CHOOSE_DURATION = 25;
 const ROUNDEND_DURATION = 6;
@@ -29,7 +34,7 @@ function makeRoomCode() {
 }
 
 function normalize(text) {
-  return String(text || '').trim().toLowerCase().replace(/\s+/g, '');
+  return normalizeWordKey(text);
 }
 
 function clamp01(n) {
@@ -67,6 +72,7 @@ class Room {
     this.currentDrawerId = null; // playerId
     this.word = null;
     this.wordChoices = [];
+    this.usedWords = new Set(); // normalized keys used in the current game
     this.correctGuessers = new Set(); // playerIds
     this.roundGains = {}; // playerId -> points
 
@@ -363,24 +369,16 @@ class Room {
     } else if (this.phase === 'choosing') {
       const drawer = this.getPlayerById(this.currentDrawerId);
       if (this.settings.mode === 'default') {
-        this.io.to(drawer.socketId).emit('chooseWord', {
-          words: this.wordChoices,
-          duration: CHOOSE_DURATION,
-        });
-      } else {
+        if (drawer && drawer.socketId) {
+          this.io.to(drawer.socketId).emit('chooseWord', {
+            words: this.wordChoices,
+            duration: CHOOSE_DURATION,
+          });
+        }
+      } else if (drawer && drawer.socketId) {
         this.io.to(drawer.socketId).emit('enterWord', { duration: CHOOSE_DURATION });
       }
-      this.phaseTimer = setTimeout(() => {
-        if (this.phase === 'choosing') {
-          let auto;
-          if (this.settings.mode === 'default') {
-            auto = this.wordChoices[Math.floor(Math.random() * this.wordChoices.length)];
-          } else {
-            auto = pickWords(1)[0];
-          }
-          this.setWord(this.currentDrawerId, auto, true);
-        }
-      }, CHOOSE_DURATION * 1000);
+      this.scheduleChooseTimeout();
     }
 
     this.broadcastDrawerWait();
@@ -429,6 +427,7 @@ class Room {
     this.roundNumber = 0;
     this.drawerWaiting = false;
     this.canSkipDrawer = false;
+    this.usedWords = new Set();
 
     this.io.to(this.code).emit('gameStarted', { settings: this.settings });
     this.broadcastPlayers();
@@ -448,6 +447,7 @@ class Room {
     this.currentDrawerId = null;
     this.word = null;
     this.wordChoices = [];
+    this.usedWords = new Set();
     this.correctGuessers = new Set();
     this.roundGains = {};
     this.resetDrawing();
@@ -512,6 +512,73 @@ class Room {
     this.bgMode = 'normal';
   }
 
+  isWordUsed(word) {
+    return this.usedWords.has(normalizeWordKey(word));
+  }
+
+  markWordUsed(word) {
+    const key = normalizeWordKey(word);
+    if (key) this.usedWords.add(key);
+  }
+
+  handleWordPoolExhausted(drawer) {
+    if (drawer && drawer.socketId) {
+      this.io.to(drawer.socketId).emit('errorMsg', { text: NOT_ENOUGH_WORDS_MSG });
+    }
+    this.systemMessage(NOT_ENOUGH_WORDS_MSG);
+    this.clearTimers();
+    this.phaseTimer = setTimeout(() => {
+      if (this.phase === 'choosing') this.nextTurnOrEnd();
+    }, 3000);
+  }
+
+  pickAutoWordForFreeMode() {
+    try {
+      return pickWords(1, this.usedWords)[0];
+    } catch (e) {
+      if (e.code === 'NOT_ENOUGH_WORDS') return null;
+      throw e;
+    }
+  }
+
+  sendDefaultWordChoices(drawer) {
+    try {
+      this.wordChoices = pickWords(WORD_CHOICES, this.usedWords);
+      if (drawer && drawer.socketId) {
+        this.io.to(drawer.socketId).emit('chooseWord', {
+          words: this.wordChoices,
+          duration: CHOOSE_DURATION,
+        });
+      }
+      return true;
+    } catch (e) {
+      if (e.code === 'NOT_ENOUGH_WORDS') {
+        this.handleWordPoolExhausted(drawer);
+        return false;
+      }
+      throw e;
+    }
+  }
+
+  scheduleChooseTimeout() {
+    this.phaseTimer = setTimeout(() => {
+      if (this.phase !== 'choosing') return;
+      let auto;
+      if (this.settings.mode === 'default') {
+        if (!this.wordChoices.length) return;
+        auto = this.wordChoices[Math.floor(Math.random() * this.wordChoices.length)];
+      } else {
+        auto = this.pickAutoWordForFreeMode();
+        if (!auto) {
+          const drawer = this.getPlayerById(this.currentDrawerId);
+          this.handleWordPoolExhausted(drawer);
+          return;
+        }
+      }
+      this.setWord(this.currentDrawerId, auto, true);
+    }, CHOOSE_DURATION * 1000);
+  }
+
   beginTurn(drawer) {
     this.phase = 'choosing';
     this.roundNumber += 1;
@@ -536,28 +603,14 @@ class Room {
 
     if (drawer.socketId) {
       if (this.settings.mode === 'default') {
-        this.wordChoices = pickWords(WORD_CHOICES);
-        this.io.to(drawer.socketId).emit('chooseWord', {
-          words: this.wordChoices,
-          duration: CHOOSE_DURATION,
-        });
+        if (!this.sendDefaultWordChoices(drawer)) return;
       } else {
         this.wordChoices = [];
         this.io.to(drawer.socketId).emit('enterWord', { duration: CHOOSE_DURATION });
       }
     }
 
-    this.phaseTimer = setTimeout(() => {
-      if (this.phase === 'choosing') {
-        let auto;
-        if (this.settings.mode === 'default') {
-          auto = this.wordChoices[Math.floor(Math.random() * this.wordChoices.length)];
-        } else {
-          auto = pickWords(1)[0];
-        }
-        this.setWord(this.currentDrawerId, auto, true);
-      }
-    }, CHOOSE_DURATION * 1000);
+    if (this.phase === 'choosing') this.scheduleChooseTimeout();
   }
 
   setWord(byPlayerId, word) {
@@ -571,10 +624,18 @@ class Room {
     } else {
       w = w.slice(0, 30);
       if (!w) return;
+      if (this.isWordUsed(w)) {
+        const drawer = this.getPlayerById(this.currentDrawerId);
+        if (drawer && drawer.socketId) {
+          this.io.to(drawer.socketId).emit('errorMsg', { text: WORD_ALREADY_USED_MSG });
+        }
+        return;
+      }
     }
 
     this.clearTimers();
     this.word = w;
+    this.markWordUsed(w);
     this.phase = 'drawing';
     this.roundEndAt = Date.now() + this.settings.roundTime * 1000;
 
