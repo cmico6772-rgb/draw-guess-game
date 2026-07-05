@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="format-detection" content="telephone=no" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="theme-color" content="#EAF7EA" />
+    <title>Draw &amp; Guess</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!-- ============ HOME ============ -->
+    <section id="screen-home" class="screen active">
+      <div class="home-card">
+        <h1 class="logo">Draw &amp; Guess</h1>
+        <p class="tagline">Draw it. Guess it. Have fun with friends!</p>
+
+        <label class="field">
+          <span>Your nickname</span>
+          <input id="input-name" type="text" maxlength="16" placeholder="Enter a nickname" autocomplete="off" />
+        </label>
+
+        <button id="btn-create" class="btn btn-primary">Create Room</button>
+
+        <div class="divider"><span>or</span></div>
+
+        <label class="field">
+          <span>Room code</span>
+          <input
+            id="input-code"
+            type="text"
+            maxlength="4"
+            placeholder="4-letter code"
+            autocomplete="off"
+            autocapitalize="characters"
+          />
+        </label>
+        <button id="btn-join" class="btn btn-secondary">Join Room</button>
+
+        <p id="home-error" class="error-text"></p>
+
+        <div id="recent-section" class="recent-section hidden">
+          <div class="recent-header">
+            <h3>Recent Rooms</h3>
+            <button id="btn-clear-recent" class="btn-link">Clear History</button>
+          </div>
+          <ul id="recent-list" class="recent-list"></ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ LOBBY ============ -->
+    <section id="screen-lobby" class="screen">
+      <div class="lobby-card">
+        <h2>Waiting Room</h2>
+        <button id="room-code" class="room-code" title="Tap to copy">----</button>
+        <p class="hint-small">Tap the code to copy and share it with friends</p>
+
+        <h3>Players (<span id="lobby-count">0</span>)</h3>
+        <ul id="lobby-players" class="player-list-lobby"></ul>
+
+        <!-- Game settings (host controlled) -->
+        <div class="settings-panel">
+          <h3>Game Settings</h3>
+
+          <div class="setting-block">
+            <div class="setting-label">Game Mode</div>
+            <div class="seg" id="seg-mode">
+              <button class="seg-btn" data-mode="default">
+                <span class="seg-title">Default</span>
+                <span class="seg-desc">Pick 1 of 3 words</span>
+              </button>
+              <button class="seg-btn" data-mode="free">
+                <span class="seg-title">Free</span>
+                <span class="seg-desc">Type your own word</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="setting-block">
+            <div class="setting-label">Round Time</div>
+            <div class="seg" id="seg-time">
+              <button class="seg-btn" data-time="180"><span class="seg-title">3 min</span></button>
+              <button class="seg-btn" data-time="420"><span class="seg-title">7 min</span></button>
+              <button class="seg-btn" data-time="600"><span class="seg-title">10 min</span></button>
+            </div>
+          </div>
+
+          <p id="settings-note" class="hint-small"></p>
+        </div>
+
+        <button id="btn-start" class="btn btn-primary" disabled>Start Game</button>
+        <p id="lobby-note" class="hint-small"></p>
+        <button id="btn-leave-lobby" class="btn btn-text">Leave Room</button>
+      </div>
+    </section>
+
+    <!-- ============ GAME ============ -->
+    <section id="screen-game" class="screen">
+      <header class="game-header">
+        <div class="header-top">
+          <div id="chips" class="chips">
+            <span class="chip" id="chip-round">Round 1/1</span>
+            <span class="chip" id="chip-drawer">Drawer: -</span>
+            <span class="chip" id="chip-mode">Default</span>
+            <span class="chip" id="chip-time">3:00</span>
+          </div>
+          <button id="btn-scores" class="btn-scores" title="Scoreboard">Scores</button>
+        </div>
+        <div class="header-main">
+          <div id="timer" class="timer">03:00</div>
+          <div class="word-block">
+            <div id="word-display" class="word-display"></div>
+            <div id="hint-display" class="hint-display"></div>
+          </div>
+        </div>
+      </header>
+
+      <div class="canvas-wrap">
+        <canvas id="canvas"></canvas>
+        <div id="canvas-status" class="canvas-status"></div>
+        <div id="drawer-wait-banner" class="drawer-wait-banner hidden">
+          <p id="drawer-wait-msg">The drawer disconnected. Waiting for them to rejoin...</p>
+          <p id="drawer-wait-timer" class="drawer-wait-timer">Waiting for drawer: 30s</p>
+          <button id="btn-skip-drawer" class="btn btn-primary hidden">Skip to Next Round</button>
+        </div>
+      </div>
+
+      <!-- Drawer's toolbar (hidden for guessers) -->
+      <div id="toolbar" class="toolbar hidden">
+        <div class="tool-row">
+          <button id="btn-pen" class="tool-btn active" title="Pen">Pen</button>
+          <button id="btn-eraser" class="tool-btn" title="Eraser">Eraser</button>
+          <button id="btn-palette" class="tool-btn" title="Colors">
+            <span id="color-preview" class="color-preview"></span>Color
+          </button>
+          <button id="btn-undo" class="tool-btn" title="Undo">Undo</button>
+          <button id="btn-redo" class="tool-btn" title="Redo">Redo</button>
+          <button id="btn-fill" class="tool-btn" title="Bucket fill">Fill</button>
+          <button id="btn-clear" class="tool-btn" title="Clear canvas">Clear</button>
+        </div>
+
+        <div class="tool-row bg-modes" id="bg-modes">
+          <span class="bg-label">View</span>
+          <button class="bg-btn active" data-bg="normal">Normal</button>
+          <button class="bg-btn" data-bg="inverted">Inverted</button>
+          <button class="bg-btn" data-bg="sepia">Sepia</button>
+          <button class="bg-btn" data-bg="dim">Dim</button>
+        </div>
+
+        <div class="tool-row sliders">
+          <label class="slider-label">
+            Size <span id="size-value">6</span>px
+            <input id="size-slider" type="range" min="1" max="40" value="6" />
+            <span id="size-preview" class="size-preview"></span>
+          </label>
+          <label class="slider-label">
+            Opacity <span id="opacity-value">100</span>%
+            <input id="opacity-slider" type="range" min="10" max="100" value="100" />
+          </label>
+        </div>
+
+        <div id="palette" class="palette hidden">
+          <div class="swatches" id="swatches"></div>
+          <label class="custom-color">
+            Custom
+            <input id="custom-color" type="color" value="#000000" />
+          </label>
+        </div>
+      </div>
+
+      <!-- Chat / guessing -->
+      <div class="chat-area">
+        <div id="chat-log" class="chat-log"></div>
+        <form id="chat-form" class="chat-form">
+          <input
+            id="chat-input"
+            type="text"
+            maxlength="60"
+            placeholder="Type your guess..."
+            autocomplete="off"
+          />
+          <button type="submit" class="btn btn-send" id="chat-send">Send</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- ============ Choose word overlay (Default mode) ============ -->
+    <div id="overlay-choose" class="overlay hidden">
+      <div class="overlay-card">
+        <h3>Choose a word to draw</h3>
+        <div id="choose-words" class="choose-words"></div>
+        <button id="btn-start-drawing" class="btn btn-primary" disabled>Start Drawing</button>
+        <p id="choose-timer" class="hint-small"></p>
+      </div>
+    </div>
+
+    <!-- ============ Enter word overlay (Free mode) ============ -->
+    <div id="overlay-freeword" class="overlay hidden">
+      <div class="overlay-card">
+        <h3>Type your secret word</h3>
+        <p class="hint-small">Only you can see this word.</p>
+        <input id="free-word-input" class="free-word-input" type="text" maxlength="30" placeholder="Your secret word" autocomplete="off" />
+        <button id="btn-free-start" class="btn btn-primary" disabled>Start Drawing</button>
+        <p id="free-timer" class="hint-small"></p>
+      </div>
+    </div>
+
+    <!-- ============ Round end overlay ============ -->
+    <div id="overlay-roundend" class="overlay hidden">
+      <div class="overlay-card">
+        <p class="reveal-label">The word was</p>
+        <h2 id="reveal-word" class="reveal-word"></h2>
+        <ul id="round-gains" class="round-gains"></ul>
+        <p id="next-round-note" class="hint-small"></p>
+      </div>
+    </div>
+
+    <!-- ============ Game end overlay ============ -->
+    <div id="overlay-gameend" class="overlay hidden">
+      <div class="overlay-card">
+        <h2 class="final-title">Final Ranking</h2>
+        <ol id="final-ranking" class="final-ranking"></ol>
+        <button id="btn-play-again" class="btn btn-primary hidden">Play Again</button>
+        <button id="btn-back-home" class="btn btn-text">Back to Home</button>
+      </div>
+    </div>
+
+    <!-- ============ Scoreboard overlay ============ -->
+    <div id="overlay-scores" class="overlay hidden">
+      <div class="overlay-card">
+        <h3>Scoreboard</h3>
+        <ul id="scoreboard" class="scoreboard"></ul>
+        <button id="btn-close-scores" class="btn btn-secondary">Close</button>
+      </div>
+    </div>
+
+    <!-- Toast -->
+    <div id="toast" class="toast hidden"></div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="client.js"></script>
+  </body>
+</html>

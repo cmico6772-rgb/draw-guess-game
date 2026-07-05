@@ -1,0 +1,16 @@
+{
+  "name": "draw-guess",
+  "version": "1.0.0",
+  "private": true,
+  "description": "你画我猜 - a real-time multiplayer Draw and Guess game (Node + Socket.IO + HTML Canvas)",
+  "main": "server/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  }
+}
