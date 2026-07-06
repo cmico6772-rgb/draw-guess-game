@@ -68,7 +68,22 @@
           <h3>Game Settings</h3>
 
           <div class="setting-block">
-            <div class="setting-label">Game Mode</div>
+            <div class="setting-label">Play Mode</div>
+            <div class="seg" id="seg-game-type">
+              <button class="seg-btn" data-game-type="drawguess">
+                <span class="seg-title">Draw &amp; Guess</span>
+                <span class="seg-desc">Classic turn-based</span>
+              </button>
+              <button class="seg-btn" data-game-type="telephone">
+                <span class="seg-title">Drawing Telephone</span>
+                <span class="seg-desc">Chain draw &amp; guess</span>
+              </button>
+            </div>
+          </div>
+
+          <div id="drawguess-settings">
+          <div class="setting-block">
+            <div class="setting-label">Word Mode</div>
             <div class="seg" id="seg-mode">
               <button class="seg-btn" data-mode="default">
                 <span class="seg-title">Default</span>
@@ -91,6 +106,20 @@
           </div>
 
           <p id="settings-note" class="hint-small"></p>
+          </div>
+
+          <div id="telephone-rules" class="telephone-rules hidden">
+            <h4>Drawing Telephone Rules</h4>
+            <ul class="tel-rules-list">
+              <li>Minimum players: <strong>4</strong></li>
+              <li>Everyone draws and guesses at the same time</li>
+              <li>Drawing time: <strong>60 seconds</strong></li>
+              <li>Guessing time: <strong>20 seconds</strong></li>
+              <li>Word selection: <strong>10 seconds</strong></li>
+              <li>Each stage advances when everyone finishes or the timer ends</li>
+              <li>Final score = rating points + successful chain bonuses</li>
+            </ul>
+          </div>
         </div>
 
         <button id="btn-start" class="btn btn-primary" disabled>Start Game</button>
@@ -116,6 +145,7 @@
           <div id="timer" class="timer">03:00</div>
           <div class="word-block">
             <div id="word-display" class="word-display"></div>
+            <div id="tel-stage-progress" class="tel-stage-progress hidden"></div>
             <div id="hint-display" class="hint-display"></div>
           </div>
         </div>
@@ -232,6 +262,57 @@
       </div>
     </div>
 
+    <!-- ============ Drawing Telephone overlays ============ -->
+    <div id="overlay-tel-words" class="overlay hidden">
+      <div class="overlay-card">
+        <h3>Choose your starting word</h3>
+        <div id="tel-choose-words" class="choose-words"></div>
+        <p id="tel-word-wait" class="hint-small">Waiting for other players...</p>
+        <p id="tel-word-timer" class="hint-small"></p>
+      </div>
+    </div>
+
+    <div id="overlay-tel-guess" class="overlay hidden">
+      <div class="overlay-card tel-guess-card">
+        <h3>What do you think this is?</h3>
+        <div id="tel-guess-image-wrap" class="tel-guess-image-wrap">
+          <img id="tel-guess-image" class="tel-guess-image" alt="Drawing to guess" />
+        </div>
+        <input id="tel-guess-input" class="free-word-input" type="text" maxlength="60" placeholder="Type your guess..." autocomplete="off" />
+        <button id="btn-tel-submit-guess" class="btn btn-primary">Submit Guess</button>
+        <p id="tel-guess-timer" class="hint-small"></p>
+      </div>
+    </div>
+
+    <div id="overlay-tel-showcase" class="overlay hidden">
+      <div class="overlay-card tel-showcase-card">
+        <h3 id="tel-showcase-title">Chain Showcase</h3>
+        <div id="tel-showcase-feed" class="tel-showcase-feed"></div>
+        <div id="tel-rating-panel" class="tel-rating-panel hidden">
+          <p class="tel-rate-label">Rate this from 1 to 10</p>
+          <div id="tel-rate-btns" class="tel-rate-btns"></div>
+        </div>
+        <div id="tel-vote-panel" class="tel-vote-panel hidden">
+          <p id="tel-vote-question">Is the final guess similar to the original word?</p>
+          <div class="tel-vote-btns">
+            <button id="btn-tel-vote-yes" class="btn btn-primary">Yes</button>
+            <button id="btn-tel-vote-no" class="btn btn-secondary">No</button>
+          </div>
+          <p id="tel-vote-result" class="hint-small"></p>
+        </div>
+      </div>
+    </div>
+
+    <div id="overlay-tel-final" class="overlay hidden">
+      <div class="overlay-card">
+        <h2 class="final-title">Drawing Telephone Results</h2>
+        <div id="tel-final-table" class="tel-final-table"></div>
+        <button id="btn-tel-back-room" class="btn btn-primary hidden">Back to Room</button>
+        <p id="tel-final-wait" class="hint-small hidden">Waiting for the host to return to the room...</p>
+        <button id="btn-tel-leave" class="btn btn-text">Leave Room</button>
+      </div>
+    </div>
+
     <!-- ============ Scoreboard overlay ============ -->
     <div id="overlay-scores" class="overlay hidden">
       <div class="overlay-card">
@@ -246,5 +327,6 @@
 
     <script src="/socket.io/socket.io.js"></script>
     <script src="client.js"></script>
+    <script src="telephone-client.js"></script>
   </body>
 </html>

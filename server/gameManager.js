@@ -6,6 +6,7 @@ const {
   NOT_ENOUGH_WORDS_MSG,
   WORD_ALREADY_USED_MSG,
 } = require('./words');
+const { TelephoneGame, MIN_PLAYERS: TEL_MIN_PLAYERS } = require('./telephoneGame');
 
 const CHOOSE_DURATION = 25;
 const ROUNDEND_DURATION = 6;
@@ -14,7 +15,7 @@ const WORD_CHOICES = 3;
 const MIN_PLAYERS = 2;
 
 const ROUND_TIME_OPTIONS = [180, 420, 600];
-const DEFAULT_SETTINGS = { mode: 'default', roundTime: 180 };
+const DEFAULT_SETTINGS = { gameType: 'drawguess', mode: 'default', roundTime: 180 };
 
 const DRAWER_BONUS_PER_GUESSER = 20;
 
@@ -92,6 +93,16 @@ class Room {
     this.waitEndAt = 0;
     this.waitTickTimer = null;
     this.waitExpireTimer = null;
+
+    this.telephone = null;
+  }
+
+  isTelephone() {
+    return !!this.telephone;
+  }
+
+  isTelephonePhase() {
+    return this.phase && String(this.phase).indexOf('tel_') === 0;
   }
 
   // ---- player helpers -------------------------------------------------
@@ -127,7 +138,11 @@ class Room {
   }
 
   broadcastSettings() {
-    this.io.to(this.code).emit('settings', this.settings);
+    this.io.to(this.code).emit('settings', {
+      gameType: this.settings.gameType,
+      mode: this.settings.mode,
+      roundTime: this.settings.roundTime,
+    });
   }
 
   broadcastDrawerWait() {
@@ -190,7 +205,7 @@ class Room {
         : 0,
     };
 
-    if (this.phase === 'drawing') {
+    if (this.phase === 'drawing' && !this.isTelephonePhase()) {
       payload.timeLeft = this.drawerWaiting
         ? this.pausedTimeLeft
         : this.timeLeft();
@@ -202,6 +217,13 @@ class Room {
       payload.chooseDuration = CHOOSE_DURATION;
     }
 
+    if (this.telephone) {
+      Object.assign(payload, this.telephone.buildStateSync(forPlayer));
+      payload.gameType = 'telephone';
+      return payload;
+    }
+
+    payload.gameType = 'drawguess';
     return payload;
   }
 
@@ -218,6 +240,12 @@ class Room {
         const next = this.activePlayers()[0];
         this.hostPlayerId = next ? next.playerId : null;
       }
+      this.broadcastPlayers();
+      return;
+    }
+
+    if (this.isTelephonePhase()) {
+      if (this.telephone) this.telephone.handleDisconnect(player.playerId);
       this.broadcastPlayers();
       return;
     }
@@ -299,6 +327,9 @@ class Room {
     if (!host || host.playerId !== this.hostPlayerId) return;
     if (this.phase !== 'lobby' && this.phase !== 'gameend') return;
     if (!incoming || typeof incoming !== 'object') return;
+    if (incoming.gameType === 'drawguess' || incoming.gameType === 'telephone') {
+      this.settings.gameType = incoming.gameType;
+    }
     if (incoming.mode === 'default' || incoming.mode === 'free') {
       this.settings.mode = incoming.mode;
     }
@@ -311,6 +342,7 @@ class Room {
   // ---- drawer wait / reconnect ----------------------------------------
 
   handleDrawerDisconnect() {
+    if (this.isTelephonePhase()) return;
     if (this.drawerWaiting) return;
     this.drawerWaiting = true;
     this.canSkipDrawer = false;
@@ -416,6 +448,23 @@ class Room {
     const host = this.getPlayerBySocket(bySocketId);
     if (this.phase !== 'lobby' && this.phase !== 'gameend') return;
     if (!host || host.playerId !== this.hostPlayerId) return;
+
+    if (this.settings.gameType === 'telephone') {
+      if (this.activePlayers().length < TEL_MIN_PLAYERS) {
+        this.io.to(bySocketId).emit('errorMsg', {
+          text: 'At least 4 players are required to start Drawing Telephone.',
+        });
+        return;
+      }
+      this.telephone = new TelephoneGame(this);
+      if (!this.telephone.start()) {
+        this.telephone = null;
+        return;
+      }
+      this.broadcastPlayers();
+      return;
+    }
+
     if (this.activePlayers().length < MIN_PLAYERS) {
       this.io.to(bySocketId).emit('errorMsg', { text: `Need at least ${MIN_PLAYERS} players to start.` });
       return;
@@ -451,12 +500,21 @@ class Room {
     this.correctGuessers = new Set();
     this.roundGains = {};
     this.resetDrawing();
+    if (this.telephone) {
+      this.telephone.destroy();
+      this.telephone = null;
+    }
   }
 
   returnToLobby(bySocketId) {
     const host = this.getPlayerBySocket(bySocketId);
     if (!host || host.playerId !== this.hostPlayerId) return;
     if (this.phase !== 'gameend') return;
+
+    if (this.telephone) {
+      this.telephone.returnToLobby();
+      return;
+    }
 
     this.resetGameSession();
     this.phase = 'lobby';

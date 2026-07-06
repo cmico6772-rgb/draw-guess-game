@@ -50,8 +50,10 @@ io.on('connection', (socket) => {
 
     if (reconnected && room.phase !== 'lobby' && room.phase !== 'gameend') {
       socket.emit('stateSync', room.buildStateSync(player));
-      room.sendDrawHistory(socket.id);
-      room.broadcastDrawerWait();
+      if (!room.isTelephonePhase()) {
+        room.sendDrawHistory(socket.id);
+        room.broadcastDrawerWait();
+      }
     }
 
     room.broadcastPlayers();
@@ -172,6 +174,46 @@ io.on('connection', (socket) => {
   socket.on('resetScores', () => {
     const room = currentRoom();
     if (room) room.resetScores(socket.id);
+  });
+
+  socket.on('telephoneChooseWord', ({ word } = {}) => {
+    const room = currentRoom();
+    if (room && room.telephone) {
+      const pid = room.playerIdFromSocket(socket.id);
+      if (pid) room.telephone.chooseWord(pid, word);
+    }
+  });
+
+  socket.on('telephoneSubmitDrawing', (data = {}) => {
+    const room = currentRoom();
+    if (room && room.telephone) {
+      const pid = room.playerIdFromSocket(socket.id);
+      if (pid) room.telephone.submitDrawing(pid, data);
+    }
+  });
+
+  socket.on('telephoneSubmitGuess', ({ text } = {}) => {
+    const room = currentRoom();
+    if (room && room.telephone) {
+      const pid = room.playerIdFromSocket(socket.id);
+      if (pid) room.telephone.submitGuess(pid, text);
+    }
+  });
+
+  socket.on('telephoneRateItem', ({ itemKey, score } = {}) => {
+    const room = currentRoom();
+    if (room && room.telephone) {
+      const pid = room.playerIdFromSocket(socket.id);
+      if (pid) room.telephone.rateItem(pid, itemKey, score);
+    }
+  });
+
+  socket.on('telephoneVoteSuccess', ({ chainId, yes } = {}) => {
+    const room = currentRoom();
+    if (room && room.telephone) {
+      const pid = room.playerIdFromSocket(socket.id);
+      if (pid) room.telephone.voteChainSuccess(pid, chainId, yes);
+    }
   });
 
   socket.on('leaveRoom', () => {

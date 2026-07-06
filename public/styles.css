@@ -909,6 +909,131 @@ input {
   text-align: center;
 }
 
+/* ---------- Drawing Telephone ---------- */
+.telephone-rules {
+  margin-top: 10px;
+  text-align: left;
+}
+.telephone-rules h4 {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+.tel-rules-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.tel-stage-progress {
+  font-size: 13px;
+  color: var(--accent);
+  font-weight: 600;
+  margin-top: 4px;
+  min-height: 18px;
+}
+.tel-guess-card {
+  max-width: 420px;
+}
+.tel-guess-image-wrap {
+  margin: 10px 0;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 8px;
+  min-height: 120px;
+}
+.tel-guess-image {
+  max-width: 100%;
+  max-height: 220px;
+  display: block;
+  margin: 0 auto;
+  border-radius: 8px;
+}
+.tel-showcase-card {
+  max-width: 520px;
+  max-height: 85vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.tel-showcase-feed {
+  flex: 1;
+  overflow-y: auto;
+  max-height: 45vh;
+  margin: 10px 0;
+  padding: 4px;
+}
+.tel-bubble {
+  background: #f2faf2;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 10px 14px;
+  margin-bottom: 10px;
+  font-size: 14px;
+  line-height: 1.45;
+  text-align: left;
+}
+.tel-bubble-img {
+  max-width: 100%;
+  max-height: 180px;
+  border-radius: 8px;
+  margin-top: 6px;
+  display: block;
+}
+.tel-rating-panel {
+  margin-top: 8px;
+  text-align: center;
+}
+.tel-rate-label {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0 0 6px;
+}
+.tel-rate-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+}
+.tel-rate-btn {
+  min-width: 36px;
+  padding: 6px 8px;
+  font-size: 13px;
+}
+.tel-vote-panel {
+  margin-top: 10px;
+  text-align: center;
+}
+.tel-vote-btns {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 8px;
+}
+.tel-final-table {
+  width: 100%;
+  margin: 12px 0;
+  font-size: 13px;
+}
+.tel-final-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr 1fr;
+  gap: 6px;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+.tel-final-row.top1 {
+  background: #f2faf2;
+  font-weight: 600;
+}
+.tel-final-header {
+  font-weight: 700;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 /* ---------- Utility ---------- */
 .hidden {
   display: none !important;

@@ -19,11 +19,13 @@
     drawerName: '',
     mode: 'default',
     roundTime: 180,
-    settings: { mode: 'default', roundTime: 180 },
+    settings: { gameType: 'drawguess', mode: 'default', roundTime: 180 },
     bgMode: 'normal',
     drawerWaiting: false,
     canSkipDrawer: false,
     waitLeft: 0,
+    telLocalDraw: false,
+    telPhase: null,
   };
 
   // Finalized drawing history (synced) + the in-progress stroke.
@@ -148,6 +150,10 @@
     hideOverlay('overlay-roundend');
     hideOverlay('overlay-gameend');
     hideOverlay('overlay-scores');
+    hideOverlay('overlay-tel-words');
+    hideOverlay('overlay-tel-guess');
+    hideOverlay('overlay-tel-showcase');
+    hideOverlay('overlay-tel-final');
   }
 
   var toastTimer = null;
@@ -221,8 +227,14 @@
   function amHost() { return state.hostId === state.me; }
 
   // Settings segmented controls.
+  var segGameType = $('seg-game-type');
   var segMode = $('seg-mode');
   var segTime = $('seg-time');
+  segGameType.addEventListener('click', function (e) {
+    var btn = e.target.closest('.seg-btn');
+    if (!btn || !amHost()) return;
+    socket.emit('updateSettings', { gameType: btn.getAttribute('data-game-type') });
+  });
   segMode.addEventListener('click', function (e) {
     var btn = e.target.closest('.seg-btn');
     if (!btn || !amHost()) return;
@@ -236,6 +248,15 @@
 
   function renderSettings() {
     var host = amHost();
+    var gtBtns = segGameType.querySelectorAll('.seg-btn');
+    for (var g = 0; g < gtBtns.length; g += 1) {
+      var gType = gtBtns[g].getAttribute('data-game-type');
+      gtBtns[g].classList.toggle('selected', gType === (state.settings.gameType || 'drawguess'));
+      gtBtns[g].disabled = !host;
+    }
+    $('drawguess-settings').classList.toggle('hidden', (state.settings.gameType || 'drawguess') !== 'drawguess');
+    $('telephone-rules').classList.toggle('hidden', state.settings.gameType !== 'telephone');
+
     var mbtns = segMode.querySelectorAll('.seg-btn');
     for (var i = 0; i < mbtns.length; i += 1) {
       var m = mbtns[i].getAttribute('data-mode');
@@ -248,9 +269,15 @@
       tbtns[j].classList.toggle('selected', t === state.settings.roundTime);
       tbtns[j].disabled = !host;
     }
-    $('settings-note').textContent = host
-      ? 'You are the host. Choose the mode and round time.'
-      : 'Only the host can change settings.';
+    if (state.settings.gameType === 'telephone') {
+      $('settings-note').textContent = host
+        ? 'You are the host. Drawing Telephone requires at least 4 players.'
+        : 'Only the host can change settings.';
+    } else {
+      $('settings-note').textContent = host
+        ? 'You are the host. Choose the mode and round time.'
+        : 'Only the host can change settings.';
+    }
   }
 
   function renderLobby() {
@@ -292,11 +319,18 @@
     var resetBtn = $('btn-reset-scores');
     startBtn.classList.toggle('hidden', !host);
     resetBtn.classList.toggle('hidden', !host);
-    var enough = state.players.length >= 2;
+    var minPlayers = state.settings.gameType === 'telephone' ? 4 : 2;
+    var enough = state.players.length >= minPlayers;
     startBtn.disabled = !enough;
-    $('lobby-note').textContent = host
-      ? (enough ? '' : 'Need at least 2 players.')
-      : 'Waiting for the host to start a new game.';
+    if (state.settings.gameType === 'telephone') {
+      $('lobby-note').textContent = host
+        ? (enough ? '' : 'At least 4 players are required to start Drawing Telephone.')
+        : 'Waiting for the host to start a new game.';
+    } else {
+      $('lobby-note').textContent = host
+        ? (enough ? '' : 'Need at least 2 players.')
+        : 'Waiting for the host to start a new game.';
+    }
 
     renderSettings();
   }
@@ -582,6 +616,7 @@
   var drawing = false;
 
   function canDraw() {
+    if (state.telLocalDraw) return true;
     return state.isDrawer && state.phase === 'drawing' && !state.drawerWaiting;
   }
 
@@ -623,17 +658,17 @@
       var op = { flood: true, x: pf.x, y: pf.y, c: tool.color, o: tool.opacity };
       history.push(op);
       renderAll();
-      socket.emit('floodFill', { x: pf.x, y: pf.y, c: tool.color, o: tool.opacity });
+      if (!state.telLocalDraw) socket.emit('floodFill', { x: pf.x, y: pf.y, c: tool.color, o: tool.opacity });
       return;
     }
     drawing = true;
     var st = styleFromTool();
     liveStroke = { c: st.c, w: st.w, o: st.o, erase: st.erase, pts: [] };
-    socket.emit('strokeStart', st);
+    if (!state.telLocalDraw) socket.emit('strokeStart', st);
     var p = pointFromEvent(e);
     liveStroke.pts.push(p);
     drawLiveSegment(liveStroke);
-    socket.emit('drawPoint', p);
+    if (!state.telLocalDraw) socket.emit('drawPoint', p);
     if (canvas.setPointerCapture && e.pointerId != null) {
       try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
     }
@@ -645,7 +680,7 @@
     var p = pointFromEvent(e);
     liveStroke.pts.push(p);
     drawLiveSegment(liveStroke);
-    socket.emit('drawPoint', p);
+    if (!state.telLocalDraw) socket.emit('drawPoint', p);
   }
 
   function pointerUp(e) {
@@ -656,7 +691,7 @@
       history.push(liveStroke);
     }
     liveStroke = null;
-    socket.emit('strokeEnd');
+    if (!state.telLocalDraw) socket.emit('strokeEnd');
     renderAll(); // clean re-render so opacity looks correct
   }
 
@@ -702,15 +737,24 @@
     $('palette').classList.toggle('hidden');
   });
 
-  $('btn-undo').addEventListener('click', function () { if (canDraw()) socket.emit('undo'); });
-  $('btn-redo').addEventListener('click', function () { if (canDraw()) socket.emit('redo'); });
-
+  $('btn-undo').addEventListener('click', function () {
+    if (!canDraw()) return;
+    if (state.telLocalDraw) {
+      if (!history.length) return;
+      history.pop();
+      liveStroke = null;
+      renderAll();
+      return;
+    }
+    socket.emit('undo');
+  });
+  $('btn-redo').addEventListener('click', function () { if (canDraw() && !state.telLocalDraw) socket.emit('redo'); });
   $('btn-clear').addEventListener('click', function () {
     if (!canDraw()) return;
     history = [];
     liveStroke = null;
     renderAll();
-    socket.emit('clearCanvas');
+    if (!state.telLocalDraw) socket.emit('clearCanvas');
   });
 
   // ---------- Background / view mode (drawer controlled, synced) ----------
@@ -804,6 +848,9 @@
     state.canSkipDrawer = false;
     state.waitLeft = 0;
     state.bgMode = 'normal';
+    state.telLocalDraw = false;
+    state.telPhase = null;
+    state.gameType = 'drawguess';
     history = [];
     liveStroke = null;
     $('chat-log').innerHTML = '';
@@ -913,9 +960,11 @@
   });
 
   socket.on('settings', function (s) {
+    if (s && (s.gameType === 'drawguess' || s.gameType === 'telephone')) state.settings.gameType = s.gameType;
     if (s && (s.mode === 'default' || s.mode === 'free')) state.settings.mode = s.mode;
     if (s && s.roundTime) state.settings.roundTime = s.roundTime;
-    if (screens.lobby.classList.contains('active')) renderSettings();
+    if (screens.lobby.classList.contains('active')) renderLobby();
+    else renderSettings();
   });
 
   socket.on('players', function (data) {
@@ -1176,6 +1225,16 @@
     socket.emit('requestDrawHistory');
   });
 
+  function setChatDisabled(disabled, msg) {
+    $('chat-input').disabled = !!disabled;
+    $('chat-send').disabled = !!disabled;
+    if (disabled) {
+      $('chat-input').placeholder = msg || 'Chat is disabled during drawing and guessing.';
+    } else {
+      $('chat-input').placeholder = 'Type your guess...';
+    }
+  }
+
   // ---------- Init ----------
   renderRecentRooms();
   buildSwatches();
@@ -1185,4 +1244,39 @@
     preview.style.width = '6px';
     preview.style.height = '6px';
   })();
+
+  window.DG = {
+    socket: socket,
+    $: $,
+    state: state,
+    getHistory: function () { return history; },
+    setHistory: function (h) { history = h; liveStroke = null; },
+    getLiveStroke: function () { return liveStroke; },
+    setLiveStroke: function (s) { liveStroke = s; },
+    tool: tool,
+    canvas: canvas,
+    ctx: ctx,
+    getCssSize: function () { return { w: cssW, h: cssH }; },
+    renderAll: renderAll,
+    fillWhite: fillWhite,
+    setMode: setMode,
+    enterGameScreen: enterGameScreen,
+    showOverlay: showOverlay,
+    hideOverlay: hideOverlay,
+    hideAllOverlays: hideAllOverlays,
+    showScreen: showScreen,
+    toast: toast,
+    timeLabel: timeLabel,
+    amHost: amHost,
+    addChat: addChat,
+    escapeHtml: escapeHtml,
+    setupToolbarVisibility: setupToolbarVisibility,
+    renderTimer: renderTimer,
+    setChatDisabled: setChatDisabled,
+    resetClientGameState: resetClientGameState,
+    enterLobbyScreen: enterLobbyScreen,
+    renderLobby: renderLobby,
+    applyBgMode: applyBgMode,
+    canDraw: canDraw,
+  };
 })();
