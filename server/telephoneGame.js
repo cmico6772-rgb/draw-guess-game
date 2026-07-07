@@ -13,14 +13,22 @@ const CHAIN_VOTE_DURATION = 15;
 const CHAIN_SUCCESS_BONUS = 10;
 const SUCCESS_THRESHOLD = 0.6; // strictly greater than 60%
 
-/** Build step plan for a chain with n players. Final step is always a guess. */
+/**
+ * Build step plan for a chain with n players. The chain always alternates
+ * draw -> guess -> draw -> guess ... and MUST end on a guess.
+ *
+ * For even n the natural last step is already a guess. For odd n the natural
+ * last step is a draw, so we append ONE extra guessing step whose actor wraps
+ * back to the first player in the chain order (playerOffset === n maps to the
+ * origin, since (originIdx + n) % n === originIdx).
+ */
 function buildChainPlan(n) {
   const steps = [];
   for (let i = 0; i < n; i += 1) {
     steps.push({ type: i % 2 === 0 ? 'draw' : 'guess', playerOffset: i });
   }
   if (steps.length && steps[steps.length - 1].type === 'draw') {
-    steps[steps.length - 1].type = 'guess';
+    steps.push({ type: 'guess', playerOffset: n });
   }
   return steps;
 }

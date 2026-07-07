@@ -1010,6 +1010,20 @@ input {
   min-height: 16px;
 }
 
+/* Submit-drawing button floating over the canvas (Drawing Telephone only) */
+.tel-submit-draw {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  width: auto;
+  padding: 10px 18px;
+  box-shadow: var(--shadow);
+  z-index: 6;
+}
+.tel-submit-draw:disabled {
+  opacity: 0.6;
+}
+
 /* Full-screen drawing focus (Drawing Telephone drawing stage): hide the chat,
    messages and passing-order panels so the canvas fills almost the whole page. */
 .tel-focus-draw .chat-area {

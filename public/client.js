@@ -511,6 +511,12 @@
   // Bucket / flood fill from a normalized point, operating in device pixels so
   // it is correct on high-DPI screens. Replaying it during renderAll on the
   // same prior pixels is deterministic across all clients.
+  //
+  // Standard 4-way flood fill: only pixels whose colour is close to the CLICKED
+  // pixel's colour are filled, so any drawn line (of any colour) that differs
+  // from the start colour acts as a boundary and the fill stays inside a closed
+  // shape. A conservative tolerance keeps anti-aliased edges as a natural wall
+  // instead of letting the fill bleed across them.
   function floodFillAt(nx, ny, colorHex, opacity) {
     var w = canvas.width;
     var h = canvas.height;
@@ -521,18 +527,25 @@
     try { img = ctx.getImageData(0, 0, w, h); } catch (e) { return; }
     var data = img.data;
     var start = (sy * w + sx) * 4;
-    var tr = data[start], tg = data[start + 1], tb = data[start + 2], ta = data[start + 3];
+    var sr = data[start], sg = data[start + 1], sb = data[start + 2], sa = data[start + 3];
     var fc = hexToRgb(colorHex);
     var a = opacity == null ? 1 : Math.max(0, Math.min(1, opacity));
-    // Tolerance must reach anti-aliased interior pixels near stroke edges (often ~191 on white).
-    var tol = 100 * 100 * 3;
-    function match(i) {
-      var dr = data[i] - tr, dg = data[i + 1] - tg, db = data[i + 2] - tb, da = data[i + 3] - ta;
-      return (dr * dr + dg * dg + db * db + da * da) <= tol;
+
+    // Conservative per-channel tolerance (squared distance over RGBA). Small
+    // enough that stroke/boundary pixels are never crossed.
+    var TOL = 42;
+    var tol2 = TOL * TOL * 4;
+
+    // No-op guard: if the clicked area is already essentially the fill colour,
+    // don't repaint (avoids pointless ops and visual jitter on replay).
+    if (a >= 0.999) {
+      var dfr = sr - fc.r, dfg = sg - fc.g, dfb = sb - fc.b, dfa = sa - 255;
+      if (dfr * dfr + dfg * dfg + dfb * dfb + dfa * dfa <= tol2) return;
     }
-    // Pixels that are clearly stroke ink (very dark) must never be filled.
-    function isStrokePixel(i) {
-      return data[i] + data[i + 1] + data[i + 2] < 120;
+
+    function matches(i) {
+      var dr = data[i] - sr, dg = data[i + 1] - sg, db = data[i + 2] - sb, da = data[i + 3] - sa;
+      return (dr * dr + dg * dg + db * db + da * da) <= tol2;
     }
     function paintPixel(i) {
       data[i] = Math.round(data[i] * (1 - a) + fc.r * a);
@@ -540,6 +553,7 @@
       data[i + 2] = Math.round(data[i + 2] * (1 - a) + fc.b * a);
       data[i + 3] = Math.max(data[i + 3], Math.round(255 * a));
     }
+
     var visited = new Uint8Array(w * h);
     var stack = [sx, sy];
     while (stack.length) {
@@ -549,30 +563,13 @@
       var p = y * w + x;
       if (visited[p]) continue;
       var i = p * 4;
-      if (!match(i) || isStrokePixel(i)) continue;
+      if (!matches(i)) continue; // boundary of any colour stops the fill
       visited[p] = 1;
       paintPixel(i);
       stack.push(x + 1, y);
       stack.push(x - 1, y);
       stack.push(x, y + 1);
       stack.push(x, y - 1);
-    }
-    // Edge expansion: fill anti-aliased ring pixels adjacent to filled area (2 passes).
-    for (var pass = 0; pass < 2; pass += 1) {
-      for (var py = 0; py < h; py += 1) {
-        for (var px = 0; px < w; px += 1) {
-          var pp = py * w + px;
-          if (visited[pp]) continue;
-          var pi = pp * 4;
-          if (isStrokePixel(pi)) continue;
-          var hasFilledNeighbor =
-            (px > 0 && visited[pp - 1]) || (px < w - 1 && visited[pp + 1]) ||
-            (py > 0 && visited[pp - w]) || (py < h - 1 && visited[pp + w]);
-          if (!hasFilledNeighbor) continue;
-          visited[pp] = 1;
-          paintPixel(pi);
-        }
-      }
     }
     ctx.putImageData(img, 0, 0);
   }

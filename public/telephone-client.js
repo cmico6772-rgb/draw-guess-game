@@ -142,6 +142,8 @@
     var cw = $('canvas-wrap');
     if (cw) cw.classList.add('hidden');
     $('toolbar').classList.add('hidden');
+    var sBtn = $('btn-tel-submit-draw');
+    if (sBtn) sBtn.classList.add('hidden');
     $('tel-showcase-panel').classList.remove('hidden');
     renderHeaderTransfer(null);
     $('word-display').textContent = '';
@@ -177,6 +179,12 @@
     DG.setChatDisabled(true, 'Chat is disabled during drawing and guessing.');
     tel.submittedDraw = false;
     setDrawFocus(true);
+    var submitBtn = $('btn-tel-submit-draw');
+    if (submitBtn) {
+      submitBtn.classList.remove('hidden');
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Submit Drawing';
+    }
     renderPlayerOrder();
   }
 
@@ -187,6 +195,8 @@
     setDrawFocus(false);
     exitShowcaseLayout();
     $('toolbar').classList.add('hidden');
+    var sBtn = $('btn-tel-submit-draw');
+    if (sBtn) sBtn.classList.add('hidden');
     $('word-display').textContent = '';
     $('chip-round').textContent = 'Guessing';
     $('chip-drawer').textContent = 'Guess the drawing';
@@ -209,13 +219,21 @@
     renderPlayerOrder();
   }
 
-  // Drawings auto-submit when the timer ends (no manual submit button).
-  function submitDrawing() {
+  // Submit the current canvas. Manual (Submit button) enables early advance;
+  // auto (timer end) captures whatever is on the canvas. After submitting, the
+  // canvas is locked for this player until the next stage.
+  function submitDrawing(auto) {
     if (tel.submittedDraw) return;
     tel.submittedDraw = true;
-    state.telLocalDraw = false;
-    $('toolbar').classList.add('hidden');
-    $('canvas-status').textContent = 'Time up \u2014 drawing submitted.';
+    state.telLocalDraw = false; // lock the canvas for this player
+    var submitBtn = $('btn-tel-submit-draw');
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Submitted';
+    }
+    $('canvas-status').textContent = auto
+      ? 'Time up \u2014 drawing submitted.'
+      : 'Drawing submitted. Waiting for other players...';
     socket.emit('telephoneSubmitDrawing', {
       strokes: DG.getHistory().slice(),
       imageData: exportCanvasImage(),
@@ -368,7 +386,7 @@
     // before the server times out so real work is not lost as a blank.
     if (data.phase === 'drawing' && data.timeLeft != null && data.timeLeft <= 2 &&
         state.telLocalDraw && !tel.submittedDraw) {
-      submitDrawing();
+      submitDrawing(true);
     }
     if (data.phase === 'guessing' && data.timeLeft != null && data.timeLeft <= 1 &&
         !tel.submittedGuess) {
@@ -516,6 +534,11 @@
   });
 
   // ---- UI events ----
+  var submitDrawBtn = $('btn-tel-submit-draw');
+  if (submitDrawBtn) {
+    submitDrawBtn.addEventListener('click', function () { submitDrawing(false); });
+  }
+
   $('btn-tel-submit-guess').addEventListener('click', submitGuess);
   $('tel-guess-input').addEventListener('keydown', function (e) {
     if (e.key === 'Enter') submitGuess();
