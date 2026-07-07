@@ -3,6 +3,7 @@
 const {
   pickWords,
   normalizeWordKey,
+  isValidCategory,
   NOT_ENOUGH_WORDS_MSG,
   WORD_ALREADY_USED_MSG,
 } = require('./words');
@@ -22,6 +23,7 @@ const DEFAULT_SETTINGS = {
   mode: 'default',
   roundTime: 180,
   telDrawTime: 60,
+  category: 'all',
 };
 
 const DRAWER_BONUS_PER_GUESSER = 20;
@@ -150,6 +152,7 @@ class Room {
       mode: this.settings.mode,
       roundTime: this.settings.roundTime,
       telDrawTime: this.settings.telDrawTime,
+      category: this.settings.category,
     });
   }
 
@@ -346,6 +349,9 @@ class Room {
     }
     if (TEL_DRAW_TIME_OPTIONS.indexOf(Number(incoming.telDrawTime)) !== -1) {
       this.settings.telDrawTime = Number(incoming.telDrawTime);
+    }
+    if (incoming.category && isValidCategory(incoming.category)) {
+      this.settings.category = incoming.category;
     }
     this.broadcastSettings();
   }
@@ -590,11 +596,12 @@ class Room {
     if (key) this.usedWords.add(key);
   }
 
-  handleWordPoolExhausted(drawer) {
+  handleWordPoolExhausted(drawer, message) {
+    const text = message || NOT_ENOUGH_WORDS_MSG;
     if (drawer && drawer.socketId) {
-      this.io.to(drawer.socketId).emit('errorMsg', { text: NOT_ENOUGH_WORDS_MSG });
+      this.io.to(drawer.socketId).emit('errorMsg', { text });
     }
-    this.systemMessage(NOT_ENOUGH_WORDS_MSG);
+    this.systemMessage(text);
     this.clearTimers();
     this.phaseTimer = setTimeout(() => {
       if (this.phase === 'choosing') this.nextTurnOrEnd();
@@ -603,7 +610,8 @@ class Room {
 
   pickAutoWordForFreeMode() {
     try {
-      return pickWords(1, this.usedWords)[0];
+      // Free mode auto-pick still uses the selected category pool.
+      return pickWords(1, this.usedWords, this.settings.category)[0];
     } catch (e) {
       if (e.code === 'NOT_ENOUGH_WORDS') return null;
       throw e;
@@ -612,7 +620,7 @@ class Room {
 
   sendDefaultWordChoices(drawer) {
     try {
-      this.wordChoices = pickWords(WORD_CHOICES, this.usedWords);
+      this.wordChoices = pickWords(WORD_CHOICES, this.usedWords, this.settings.category);
       if (drawer && drawer.socketId) {
         this.io.to(drawer.socketId).emit('chooseWord', {
           words: this.wordChoices,
@@ -622,7 +630,7 @@ class Room {
       return true;
     } catch (e) {
       if (e.code === 'NOT_ENOUGH_WORDS') {
-        this.handleWordPoolExhausted(drawer);
+        this.handleWordPoolExhausted(drawer, e.message);
         return false;
       }
       throw e;

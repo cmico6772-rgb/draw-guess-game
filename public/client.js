@@ -19,7 +19,7 @@
     drawerName: '',
     mode: 'default',
     roundTime: 180,
-    settings: { gameType: 'drawguess', mode: 'default', roundTime: 180, telDrawTime: 60 },
+    settings: { gameType: 'drawguess', mode: 'default', roundTime: 180, telDrawTime: 60, category: 'all' },
     bgMode: 'normal',
     drawerWaiting: false,
     canSkipDrawer: false,
@@ -234,6 +234,7 @@
   var segMode = $('seg-mode');
   var segTime = $('seg-time');
   var segTelTime = $('seg-tel-time');
+  var selectCategory = $('select-category');
   segGameType.addEventListener('click', function (e) {
     var btn = e.target.closest('.seg-btn');
     if (!btn || !amHost()) return;
@@ -253,6 +254,10 @@
     var btn = e.target.closest('.seg-btn');
     if (!btn || !amHost()) return;
     socket.emit('updateSettings', { telDrawTime: Number(btn.getAttribute('data-tel-time')) });
+  });
+  selectCategory.addEventListener('change', function () {
+    if (!amHost()) return;
+    socket.emit('updateSettings', { category: selectCategory.value });
   });
 
   function renderSettings() {
@@ -287,6 +292,11 @@
     }
     var telRuleLabel = $('tel-rule-drawtime');
     if (telRuleLabel) telRuleLabel.textContent = (telDraw / 60) + ' min';
+
+    if (selectCategory) {
+      selectCategory.value = state.settings.category || 'all';
+      selectCategory.disabled = !host;
+    }
     if (state.settings.gameType === 'telephone') {
       $('settings-note').textContent = host
         ? 'You are the host. Drawing Telephone requires at least 4 players.'
@@ -1027,6 +1037,7 @@
     if (s && (s.mode === 'default' || s.mode === 'free')) state.settings.mode = s.mode;
     if (s && s.roundTime) state.settings.roundTime = s.roundTime;
     if (s && s.telDrawTime) state.settings.telDrawTime = s.telDrawTime;
+    if (s && s.category) state.settings.category = s.category;
     if (screens.lobby.classList.contains('active')) renderLobby();
     else renderSettings();
   });

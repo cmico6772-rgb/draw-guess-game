@@ -213,13 +213,14 @@ class TelephoneGame {
     this.submissions = {};
     this.timerEndsAt = Date.now() + WORD_SELECT_DURATION * 1000;
 
+    const category = this.room.settings && this.room.settings.category;
     this.playerOrder.forEach((pid) => {
       try {
-        const words = pickWords(3, this.usedWords);
+        const words = pickWords(3, this.usedWords, category);
         this.wordChoices[pid] = words;
         words.forEach((w) => this.usedWords.add(normalizeWordKey(w)));
       } catch (e) {
-        this.wordChoices[pid] = pickWords(3, new Set());
+        this.wordChoices[pid] = pickWords(3, new Set(), category);
       }
       const p = this.room.getPlayerById(pid);
       if (p && p.socketId) {

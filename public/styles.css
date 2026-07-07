@@ -943,6 +943,26 @@ input {
   text-align: center;
 }
 
+/* Word category selector (lobby) */
+.category-select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 600;
+  font-family: inherit;
+  outline: none;
+}
+.category-select:focus {
+  border-color: var(--primary);
+}
+.category-select:disabled {
+  opacity: 0.6;
+}
+
 /* ---------- Drawing Telephone ---------- */
 .telephone-rules {
   margin-top: 10px;
