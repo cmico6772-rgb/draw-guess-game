@@ -1010,6 +1010,18 @@ input {
   min-height: 16px;
 }
 
+/* Full-screen drawing focus (Drawing Telephone drawing stage): hide the chat,
+   messages and passing-order panels so the canvas fills almost the whole page. */
+.tel-focus-draw .chat-area {
+  display: none;
+}
+.tel-focus-draw .game-header {
+  padding: 6px 12px;
+}
+.tel-focus-draw .header-main {
+  margin-top: 4px;
+}
+
 /* ---------- Full-page showcase ---------- */
 .tel-showcase-panel {
   flex: 1 1 auto;

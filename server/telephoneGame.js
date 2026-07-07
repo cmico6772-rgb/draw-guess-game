@@ -667,7 +667,9 @@ class TelephoneGame {
     this.currentVoteChainId = null;
     this.phase = 'showcase';
     this._stageLock = false;
-    this.scheduleStageTimeout(() => this.showNextShowcaseItem(), 4000);
+    // NOTE: scheduleStageTimeout takes SECONDS. Pass 4 (not 4000) so the next
+    // chain begins ~4s after the result instead of ~66 minutes later.
+    this.scheduleStageTimeout(() => this.showNextShowcaseItem(), 4);
   }
 
   beginFinal() {

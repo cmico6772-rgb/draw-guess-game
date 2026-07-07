@@ -9,7 +9,13 @@
   var state = DG.state;
 
   // Narrator name shown for system messages during the showcase.
-  var NARRATOR = 'Teacher Xiao Zhuang';
+  var NARRATOR = 'system755';
+
+  // Full-screen drawing focus: hide chat/player panels, maximize the canvas.
+  function setDrawFocus(on) {
+    var screen = $('screen-game');
+    if (screen) screen.classList.toggle('tel-focus-draw', !!on);
+  }
 
   var tel = {
     active: false,
@@ -132,6 +138,7 @@
 
   // ---- Showcase layout helpers (full page inside the game screen) ----
   function enterShowcaseLayout() {
+    setDrawFocus(false);
     var cw = $('canvas-wrap');
     if (cw) cw.classList.add('hidden');
     $('toolbar').classList.add('hidden');
@@ -169,6 +176,7 @@
     DG.renderTimer(duration || 60);
     DG.setChatDisabled(true, 'Chat is disabled during drawing and guessing.');
     tel.submittedDraw = false;
+    setDrawFocus(true);
     renderPlayerOrder();
   }
 
@@ -176,6 +184,7 @@
     tel.active = true;
     state.telLocalDraw = false;
     state.telPhase = 'guessing';
+    setDrawFocus(false);
     exitShowcaseLayout();
     $('toolbar').classList.add('hidden');
     $('word-display').textContent = '';
@@ -288,6 +297,7 @@
     tel.phase = 'wordSelect';
     state.telPhase = 'wordSelect';
     tel.wordPicked = !!data.wordPicked;
+    setDrawFocus(false);
     exitShowcaseLayout();
     var box = $('tel-choose-words');
     box.innerHTML = '';
@@ -426,11 +436,21 @@
       });
       buildReactionButtons(bubble, data.itemKey, item.playerId);
     } else if (item.kind === 'guess') {
-      var gBubble = appendShowcaseBubble({
+      // Suspense reveal: "<Player> guessed..." then the big word after 3s.
+      appendShowcaseBubble({
         author: playerName(item.playerId),
-        html: 'I guessed: <em>' + DG.escapeHtml(item.text) + '</em>',
+        html: 'guessed...',
       });
-      buildReactionButtons(gBubble, data.itemKey, item.playerId);
+      (function (word, key, creator) {
+        setTimeout(function () {
+          if (tel.currentItemKey !== key) return;
+          var revealBubble = appendShowcaseBubble({
+            cls: 'reveal',
+            html: '<div class="tel-reveal-word">' + DG.escapeHtml(word) + '</div>',
+          });
+          buildReactionButtons(revealBubble, key, creator);
+        }, 3000);
+      })(item.text, data.itemKey, item.playerId);
     }
   });
 
@@ -472,6 +492,7 @@
   socket.on('telephoneFinalResults', function (data) {
     tel.phase = 'final';
     state.phase = 'gameend';
+    setDrawFocus(false);
     exitShowcaseLayout();
     var table = $('tel-final-table');
     table.innerHTML = '';
@@ -534,6 +555,7 @@
     state.gameType = 'drawguess';
     state.telLocalDraw = false;
     state.telPhase = null;
+    setDrawFocus(false);
     exitShowcaseLayout();
     renderHeaderTransfer(null);
     renderPlayerOrder();
