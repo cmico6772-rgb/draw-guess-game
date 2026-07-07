@@ -15,7 +15,14 @@ const WORD_CHOICES = 3;
 const MIN_PLAYERS = 2;
 
 const ROUND_TIME_OPTIONS = [180, 420, 600];
-const DEFAULT_SETTINGS = { gameType: 'drawguess', mode: 'default', roundTime: 180 };
+// Drawing Telephone drawing-stage durations (seconds): 1 / 3 / 5 minutes.
+const TEL_DRAW_TIME_OPTIONS = [60, 180, 300];
+const DEFAULT_SETTINGS = {
+  gameType: 'drawguess',
+  mode: 'default',
+  roundTime: 180,
+  telDrawTime: 60,
+};
 
 const DRAWER_BONUS_PER_GUESSER = 20;
 
@@ -142,6 +149,7 @@ class Room {
       gameType: this.settings.gameType,
       mode: this.settings.mode,
       roundTime: this.settings.roundTime,
+      telDrawTime: this.settings.telDrawTime,
     });
   }
 
@@ -335,6 +343,9 @@ class Room {
     }
     if (ROUND_TIME_OPTIONS.indexOf(Number(incoming.roundTime)) !== -1) {
       this.settings.roundTime = Number(incoming.roundTime);
+    }
+    if (TEL_DRAW_TIME_OPTIONS.indexOf(Number(incoming.telDrawTime)) !== -1) {
+      this.settings.telDrawTime = Number(incoming.telDrawTime);
     }
     this.broadcastSettings();
   }

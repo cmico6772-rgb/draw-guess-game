@@ -109,15 +109,23 @@
           </div>
 
           <div id="telephone-rules" class="telephone-rules hidden">
+            <div class="setting-block">
+              <div class="setting-label">Drawing Time</div>
+              <div class="seg" id="seg-tel-time">
+                <button class="seg-btn" data-tel-time="60"><span class="seg-title">1 min</span></button>
+                <button class="seg-btn" data-tel-time="180"><span class="seg-title">3 min</span></button>
+                <button class="seg-btn" data-tel-time="300"><span class="seg-title">5 min</span></button>
+              </div>
+            </div>
             <h4>Drawing Telephone Rules</h4>
             <ul class="tel-rules-list">
               <li>Minimum players: <strong>4</strong></li>
               <li>Everyone draws and guesses at the same time</li>
-              <li>Drawing time: <strong>60 seconds</strong></li>
+              <li>Drawing time: <strong id="tel-rule-drawtime">1 min</strong> (host choice)</li>
               <li>Guessing time: <strong>20 seconds</strong></li>
               <li>Word selection: <strong>10 seconds</strong></li>
               <li>Each stage advances when everyone finishes or the timer ends</li>
-              <li>Final score = rating points + successful chain bonuses</li>
+              <li>Final score = reaction points + successful chain bonuses</li>
             </ul>
           </div>
         </div>
@@ -155,7 +163,6 @@
       <div id="canvas-wrap" class="canvas-wrap">
         <canvas id="canvas"></canvas>
         <div id="canvas-status" class="canvas-status"></div>
-        <button id="btn-tel-submit-draw" class="btn btn-primary tel-submit-draw hidden">Submit Drawing</button>
         <div id="drawer-wait-banner" class="drawer-wait-banner hidden">
           <p id="drawer-wait-msg">The drawer disconnected. Waiting for them to rejoin...</p>
           <p id="drawer-wait-timer" class="drawer-wait-timer">Waiting for drawer: 30s</p>
@@ -192,18 +199,11 @@
           <button id="btn-palette" class="tool-btn" title="Colors">
             <span id="color-preview" class="color-preview"></span>Color
           </button>
+          <button id="btn-view" class="tool-btn" title="Background view">View</button>
+          <button id="btn-fill" class="tool-btn" title="Bucket fill">Fill</button>
           <button id="btn-undo" class="tool-btn" title="Undo">Undo</button>
           <button id="btn-redo" class="tool-btn" title="Redo">Redo</button>
-          <button id="btn-fill" class="tool-btn" title="Bucket fill">Fill</button>
           <button id="btn-clear" class="tool-btn" title="Clear canvas">Clear</button>
-        </div>
-
-        <div class="tool-row bg-modes" id="bg-modes">
-          <span class="bg-label">View</span>
-          <button class="bg-btn active" data-bg="normal">Normal</button>
-          <button class="bg-btn" data-bg="inverted">Inverted</button>
-          <button class="bg-btn" data-bg="sepia">Sepia</button>
-          <button class="bg-btn" data-bg="dim">Dim</button>
         </div>
 
         <div class="tool-row sliders">
@@ -218,12 +218,25 @@
           </label>
         </div>
 
-        <div id="palette" class="palette hidden">
+        <!-- Collapsible color palette popover -->
+        <div id="palette" class="palette tool-popover hidden">
+          <div class="palette-current">
+            Selected <span id="palette-preview" class="color-preview"></span>
+          </div>
           <div class="swatches" id="swatches"></div>
           <label class="custom-color">
             Custom
             <input id="custom-color" type="color" value="#000000" />
           </label>
+        </div>
+
+        <!-- Collapsible background/view popover -->
+        <div id="bg-modes" class="bg-modes tool-popover hidden">
+          <span class="bg-label">View</span>
+          <button class="bg-btn active" data-bg="normal">Normal</button>
+          <button class="bg-btn" data-bg="inverted">Inverted</button>
+          <button class="bg-btn" data-bg="sepia">Sepia</button>
+          <button class="bg-btn" data-bg="dim">Dim</button>
         </div>
       </div>
 
@@ -240,6 +253,7 @@
           />
           <button type="submit" class="btn btn-send" id="chat-send">Send</button>
         </form>
+        <div id="tel-player-order" class="tel-player-order hidden"></div>
       </div>
     </section>
 

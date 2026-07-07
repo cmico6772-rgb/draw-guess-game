@@ -200,11 +200,11 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('telephoneRateItem', ({ itemKey, score } = {}) => {
+  socket.on('telephoneRateItem', ({ itemKey, reaction } = {}) => {
     const room = currentRoom();
     if (room && room.telephone) {
       const pid = room.playerIdFromSocket(socket.id);
-      if (pid) room.telephone.rateItem(pid, itemKey, score);
+      if (pid) room.telephone.rateItem(pid, itemKey, reaction);
     }
   });
 

@@ -61,6 +61,20 @@ class TelephoneGame {
   get io() { return this.room.io; }
   get code() { return this.room.code; }
 
+  // Host-selected drawing time for Drawing Telephone (1/3/5 minutes).
+  get drawDuration() {
+    const t = this.room.settings && Number(this.room.settings.telDrawTime);
+    return [60, 180, 300].indexOf(t) !== -1 ? t : DRAW_DURATION;
+  }
+
+  // Players still connected (they are the ones expected to rate / vote).
+  getConnectedPlayers() {
+    return this.playerOrder.filter((pid) => {
+      const p = this.room.getPlayerById(pid);
+      return p && p.connected;
+    });
+  }
+
   playerName(id) {
     const p = this.room.getPlayerById(id);
     return p ? p.name : 'Player';
@@ -69,13 +83,18 @@ class TelephoneGame {
   initScores() {
     this.scores = {};
     this.playerOrder.forEach((id) => {
-      this.scores[id] = { drawRating: 0, guessRating: 0, bonus: 0, total: 0 };
+      this.scores[id] = { reaction: 0, bonus: 0, total: 0 };
     });
   }
 
+  // Eligible raters exclude the item's creator AND any disconnected player,
+  // so the showcase can advance as soon as everyone still present has reacted.
   getEligibleRaters() {
-    if (!this.currentRateCreator) return this.playerOrder.slice();
-    return this.playerOrder.filter((pid) => pid !== this.currentRateCreator);
+    return this.playerOrder.filter((pid) => {
+      if (pid === this.currentRateCreator) return false;
+      const p = this.room.getPlayerById(pid);
+      return p && p.connected;
+    });
   }
 
   // Transfer order for the chain a player is currently working on:
@@ -133,7 +152,7 @@ class TelephoneGame {
     if (this.phase === 'chainVote' && this.currentVoteChainId) {
       const votes = this.successVotes[this.currentVoteChainId] || {};
       const done = Object.keys(votes).length;
-      return { label: 'Votes submitted', done, total };
+      return { label: 'Votes submitted', done, total: this.getConnectedPlayers().length };
     }
     return null;
   }
@@ -167,9 +186,10 @@ class TelephoneGame {
     // (which hides overlays) before word options open their overlay.
     this.io.to(this.code).emit('telephoneGameStarted', {
       playerOrder: this.playerOrder,
+      orderNames: this.playerOrder.map((id) => ({ id, name: this.playerName(id) })),
       settings: {
         wordSelectTime: WORD_SELECT_DURATION,
-        drawTime: DRAW_DURATION,
+        drawTime: this.drawDuration,
         guessTime: GUESS_DURATION,
       },
     });
@@ -286,7 +306,7 @@ class TelephoneGame {
     if (step.type === 'draw') {
       this.phase = 'drawing';
       this.room.phase = 'tel_drawing';
-      this.timerEndsAt = Date.now() + DRAW_DURATION * 1000;
+      this.timerEndsAt = Date.now() + this.drawDuration * 1000;
     } else {
       this.phase = 'guessing';
       this.room.phase = 'tel_guessing';
@@ -301,7 +321,7 @@ class TelephoneGame {
       if (assign.step.type === 'draw') {
         this.io.to(p.socketId).emit('telephoneDrawPrompt', {
           promptWord: this.getPromptForDraw(assign.chain),
-          duration: DRAW_DURATION,
+          duration: this.drawDuration,
           stepIndex: this.stepIndex,
           transfer: this.getTransferInfo(pid),
         });
@@ -319,7 +339,7 @@ class TelephoneGame {
 
     this.broadcastStage();
     this.startTick();
-    const dur = step.type === 'draw' ? DRAW_DURATION : GUESS_DURATION;
+    const dur = step.type === 'draw' ? this.drawDuration : GUESS_DURATION;
     this.scheduleStageTimeout(() => this.timeoutStep(), dur);
   }
 
@@ -540,25 +560,27 @@ class TelephoneGame {
     const ratings = this.showcaseRatings[itemKey] || {};
     const st = chain.steps[item.stepIndex];
     if (!st) return;
+    // Flower = +10, Poop = -10. Missing ratings are simply skipped.
     Object.keys(ratings).forEach((raterId) => {
       if (st.playerId === raterId) return;
       if (!this.scores[st.playerId]) return;
-      const score = ratings[raterId];
-      if (st.type === 'draw') this.scores[st.playerId].drawRating += score;
-      else this.scores[st.playerId].guessRating += score;
+      this.scores[st.playerId].reaction += ratings[raterId];
     });
     st.ratings = Object.assign({}, ratings);
   }
 
-  rateItem(playerId, itemKey, score) {
+  rateItem(playerId, itemKey, reaction) {
     if (this.phase !== 'showcase' || this._stageLock) return;
     if (playerId === this.currentRateCreator) return;
     if (itemKey !== this.currentShowcaseItemKey) return;
-    const s = Math.max(1, Math.min(10, Math.round(Number(score))));
+    if (reaction !== 'flower' && reaction !== 'poop') return;
+    const value = reaction === 'flower' ? 10 : -10;
     if (!this.showcaseRatings[itemKey]) this.showcaseRatings[itemKey] = {};
     if (this.showcaseRatings[itemKey][playerId] != null) return;
-    this.showcaseRatings[itemKey][playerId] = s;
-    this.io.to(this.code).emit('telephoneRatingUpdate', { itemKey, playerId, score: s });
+    this.showcaseRatings[itemKey][playerId] = value;
+    this.io.to(this.code).emit('telephoneRatingUpdate', {
+      itemKey, playerId, reaction, value,
+    });
     this.broadcastStage();
     if (this.allRatingsComplete()) this.advanceShowcaseItem();
   }
@@ -591,7 +613,8 @@ class TelephoneGame {
     if (this.successVotes[chainId][playerId] !== undefined) return;
     this.successVotes[chainId][playerId] = !!yes;
     this.broadcastStage();
-    if (Object.keys(this.successVotes[chainId]).length >= this.playerOrder.length) {
+    // Advance as soon as every still-connected player has voted.
+    if (Object.keys(this.successVotes[chainId]).length >= this.getConnectedPlayers().length) {
       this.finishChainVote(chainId);
     }
   }
@@ -654,15 +677,14 @@ class TelephoneGame {
 
     Object.keys(this.scores).forEach((pid) => {
       const s = this.scores[pid];
-      s.total = s.drawRating + s.guessRating + s.bonus;
+      s.total = s.reaction + s.bonus;
     });
 
     const ranking = this.playerOrder
       .map((id) => ({
         id,
         name: this.playerName(id),
-        drawRating: this.scores[id].drawRating,
-        guessRating: this.scores[id].guessRating,
+        reaction: this.scores[id].reaction,
         bonus: this.scores[id].bonus,
         total: this.scores[id].total,
       }))
@@ -693,6 +715,7 @@ class TelephoneGame {
       stepIndex: this.stepIndex,
       timeLeft: Math.max(0, Math.ceil((this.timerEndsAt - Date.now()) / 1000)),
       playerOrder: this.playerOrder,
+      orderNames: this.playerOrder.map((id) => ({ id, name: this.playerName(id) })),
       progress: this.getStageProgress(),
     };
 

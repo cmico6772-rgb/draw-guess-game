@@ -22,16 +22,25 @@
     submittedGuess: false,
     ratedItems: {},
     votedChains: {},
+    playerOrder: [],
+    playerNames: {},
   };
 
   function playerName(id) {
+    if (tel.playerNames[id]) return tel.playerNames[id];
     var p = state.players.filter(function (x) { return x.id === id; })[0];
     return p ? p.name : 'Player';
   }
 
+  function cacheOrderNames(orderNames) {
+    if (!orderNames || !orderNames.length) return;
+    tel.playerOrder = orderNames.map(function (o) { return o.id; });
+    orderNames.forEach(function (o) { tel.playerNames[o.id] = o.name; });
+  }
+
   // Export the current canvas as a white-background PNG at a sane resolution.
-  // Drawing directly from the (possibly high-DPI) canvas onto a fresh sized
-  // canvas avoids transparent/blank exports and keeps payloads small.
+  // Drawing from the canvas bitmap (not the CSS-filtered view) means the export
+  // always preserves the real strokes as drawn, regardless of the View mode.
   function exportCanvasImage() {
     try {
       var src = DG.canvas;
@@ -90,13 +99,42 @@
     el.innerHTML = transfer ? transferHtml(transfer) : '';
   }
 
+  // ---- Full player passing order (below the chat input) ----
+  function renderPlayerOrder() {
+    var el = $('tel-player-order');
+    if (!el) return;
+    var order = tel.playerOrder || [];
+    if (!tel.active || order.length === 0) {
+      el.classList.add('hidden');
+      el.innerHTML = '';
+      return;
+    }
+    var connected = {};
+    state.players.forEach(function (p) { connected[p.id] = p.connected; });
+    var myIdx = order.indexOf(state.me);
+    var n = order.length;
+    var parts = order.map(function (id, i) {
+      var isMe = id === state.me;
+      var isAdj = myIdx >= 0 && (i === (myIdx + 1) % n || i === (myIdx - 1 + n) % n);
+      // Offline if we know they are disconnected, or they dropped out of the
+      // roster entirely (never mark "Me" as offline).
+      var known = Object.prototype.hasOwnProperty.call(connected, id);
+      var isOffline = isMe ? false : (!known || connected[id] === false);
+      var label = isMe ? 'Me' : DG.escapeHtml(playerName(id));
+      if (isOffline) label += ' (Disconnected)';
+      var cls = isMe ? 'tel-po-me' : (isAdj ? 'tel-po-adj' : '');
+      if (isOffline) cls += ' tel-po-off';
+      return '<span class="' + cls + '">' + label + '</span>';
+    });
+    el.classList.remove('hidden');
+    el.innerHTML = 'Passing order: ' + parts.join(' <span class="tel-po-arrow">\u2192</span> ');
+  }
+
   // ---- Showcase layout helpers (full page inside the game screen) ----
   function enterShowcaseLayout() {
     var cw = $('canvas-wrap');
     if (cw) cw.classList.add('hidden');
     $('toolbar').classList.add('hidden');
-    var submit = $('btn-tel-submit-draw');
-    if (submit) submit.classList.add('hidden');
     $('tel-showcase-panel').classList.remove('hidden');
     renderHeaderTransfer(null);
     $('word-display').textContent = '';
@@ -131,12 +169,7 @@
     DG.renderTimer(duration || 60);
     DG.setChatDisabled(true, 'Chat is disabled during drawing and guessing.');
     tel.submittedDraw = false;
-    var submit = $('btn-tel-submit-draw');
-    if (submit) {
-      submit.classList.remove('hidden');
-      submit.disabled = false;
-      submit.textContent = 'Submit Drawing';
-    }
+    renderPlayerOrder();
   }
 
   function showGuessUI(imageData, duration, transfer) {
@@ -145,8 +178,6 @@
     state.telPhase = 'guessing';
     exitShowcaseLayout();
     $('toolbar').classList.add('hidden');
-    var submit = $('btn-tel-submit-draw');
-    if (submit) submit.classList.add('hidden');
     $('word-display').textContent = '';
     $('chip-round').textContent = 'Guessing';
     $('chip-drawer').textContent = 'Guess the drawing';
@@ -166,16 +197,16 @@
     DG.showOverlay('overlay-tel-guess');
     tel.submittedGuess = false;
     $('btn-tel-submit-guess').disabled = false;
+    renderPlayerOrder();
   }
 
+  // Drawings auto-submit when the timer ends (no manual submit button).
   function submitDrawing() {
     if (tel.submittedDraw) return;
     tel.submittedDraw = true;
     state.telLocalDraw = false;
     $('toolbar').classList.add('hidden');
-    var submit = $('btn-tel-submit-draw');
-    if (submit) submit.classList.add('hidden');
-    $('canvas-status').textContent = 'Drawing submitted. Waiting for other players...';
+    $('canvas-status').textContent = 'Time up \u2014 drawing submitted.';
     socket.emit('telephoneSubmitDrawing', {
       strokes: DG.getHistory().slice(),
       imageData: exportCanvasImage(),
@@ -207,46 +238,50 @@
     return div;
   }
 
-  function buildInlineRating(bubble, itemKey, creatorId) {
+  // Two compact reaction buttons: Flower (+10) and Poop (-10). One vote only,
+  // and never on your own item.
+  function buildReactionButtons(bubble, itemKey, creatorId) {
     if (creatorId === state.me) return;
     var wrap = document.createElement('div');
-    wrap.className = 'tel-inline-rating tel-rate-btns';
+    wrap.className = 'tel-reactions';
     if (tel.ratedItems[itemKey]) {
-      wrap.innerHTML = '<span class="tel-rate-done">Rated</span>';
+      wrap.innerHTML = '<span class="tel-rate-done">Reaction sent</span>';
       bubble.appendChild(wrap);
       return;
     }
-    for (var i = 1; i <= 10; i += 1) {
-      (function (score) {
-        var b = document.createElement('button');
-        b.className = 'tel-rate-btn';
-        b.textContent = String(score);
-        b.addEventListener('click', function () {
-          if (tel.ratedItems[itemKey]) return;
-          socket.emit('telephoneRateItem', { itemKey: itemKey, score: score });
-          tel.ratedItems[itemKey] = true;
-          var kids = wrap.querySelectorAll('.tel-rate-btn');
-          for (var k = 0; k < kids.length; k += 1) {
-            kids[k].disabled = true;
-            kids[k].classList.remove('selected');
-          }
-          b.classList.add('selected');
-        });
-        wrap.appendChild(b);
-      })(i);
-    }
+    [
+      { key: 'flower', label: '\uD83C\uDF38 +10' },
+      { key: 'poop', label: '\uD83D\uDCA9 -10' },
+    ].forEach(function (r) {
+      var b = document.createElement('button');
+      b.className = 'tel-reaction-btn ' + r.key;
+      b.textContent = r.label;
+      b.addEventListener('click', function () {
+        if (tel.ratedItems[itemKey]) return;
+        socket.emit('telephoneRateItem', { itemKey: itemKey, reaction: r.key });
+        tel.ratedItems[itemKey] = true;
+        var kids = wrap.querySelectorAll('.tel-reaction-btn');
+        for (var k = 0; k < kids.length; k += 1) kids[k].disabled = true;
+        b.classList.add('selected');
+      });
+      wrap.appendChild(b);
+    });
     bubble.appendChild(wrap);
   }
 
   // ---- Socket handlers ----
-  socket.on('telephoneGameStarted', function () {
+  socket.on('telephoneGameStarted', function (data) {
     tel.active = true;
     state.gameType = 'telephone';
+    tel.ratedItems = {};
+    tel.votedChains = {};
+    if (data) cacheOrderNames(data.orderNames);
     DG.hideAllOverlays();
     exitShowcaseLayout();
     DG.enterGameScreen();
     $('chip-mode').textContent = 'Telephone';
     DG.setChatDisabled(true, 'Chat is disabled during drawing and guessing.');
+    renderPlayerOrder();
   });
 
   function showWordOptions(data) {
@@ -276,6 +311,7 @@
     $('tel-word-timer').textContent = 'Choose within ' + (data.duration || 10) + 's, or one is chosen for you.';
     DG.showOverlay('overlay-tel-words');
     DG.setChatDisabled(true, 'Chat is disabled during drawing and guessing.');
+    renderPlayerOrder();
   }
 
   socket.on('telephoneWordOptions', function (data) {
@@ -301,7 +337,6 @@
       el.classList.toggle('hidden', !text);
       el.textContent = text;
     }
-    // Mirror progress inside the full-screen overlays that cover the header.
     var wp = $('tel-word-progress');
     if (wp) wp.textContent = tel.phase === 'wordSelect' ? text : '';
     var gp = $('tel-guess-progress');
@@ -311,6 +346,7 @@
   socket.on('telephoneStageUpdate', function (data) {
     tel.phase = data.phase;
     state.telPhase = data.phase;
+    if (data.orderNames) cacheOrderNames(data.orderNames);
     var activeStage = data.phase === 'wordSelect' || data.phase === 'drawing' || data.phase === 'guessing';
     if (data.chatDisabled) DG.setChatDisabled(true, 'Chat is disabled during drawing and guessing.');
     else DG.setChatDisabled(false);
@@ -352,6 +388,7 @@
       author: NARRATOR,
       html: 'Let\u2019s reveal every chain, one message at a time. Chat is open \u2014 react as you watch!',
     });
+    renderPlayerOrder();
   });
 
   socket.on('telephoneShowcaseItem', function (data) {
@@ -363,12 +400,22 @@
     $('tel-showcase-progress').textContent = 'Chain ' + (data.chainIndex + 1) + ' / ' + data.totalChains;
 
     if (item.kind === 'original') {
+      // Suspense reveal: announce first, then show the big word after 3s.
       appendShowcaseBubble({
         cls: 'system',
         author: NARRATOR,
         html: '<strong>' + DG.escapeHtml(playerName(item.playerId)) +
-          '</strong> selected the original word: <em>' + DG.escapeHtml(item.text) + '</em>',
+          '</strong>\u2019s original word is...',
       });
+      (function (word) {
+        setTimeout(function () {
+          if (tel.currentItemKey !== data.itemKey) return;
+          appendShowcaseBubble({
+            cls: 'reveal',
+            html: '<div class="tel-reveal-word">' + DG.escapeHtml(word) + '</div>',
+          });
+        }, 3000);
+      })(item.text);
     } else if (item.kind === 'draw') {
       var imgHtml = item.imageData
         ? '<img class="tel-bubble-img" src="' + item.imageData + '" alt="Drawing"/>'
@@ -377,13 +424,13 @@
         author: playerName(item.playerId),
         html: 'I drew it like this:<br/>' + imgHtml,
       });
-      buildInlineRating(bubble, data.itemKey, item.playerId);
+      buildReactionButtons(bubble, data.itemKey, item.playerId);
     } else if (item.kind === 'guess') {
       var gBubble = appendShowcaseBubble({
         author: playerName(item.playerId),
         html: 'I guessed: <em>' + DG.escapeHtml(item.text) + '</em>',
       });
-      buildInlineRating(gBubble, data.itemKey, item.playerId);
+      buildReactionButtons(gBubble, data.itemKey, item.playerId);
     }
   });
 
@@ -430,14 +477,14 @@
     table.innerHTML = '';
     var header = document.createElement('div');
     header.className = 'tel-final-row tel-final-header';
-    header.innerHTML = '<span>Player</span><span>Draw</span><span>Guess</span><span>Bonus</span><span>Total</span>';
+    header.innerHTML = '<span>Player</span><span>Reaction</span><span>Bonus</span><span>Total</span>';
     table.appendChild(header);
     (data.ranking || []).forEach(function (r, i) {
       var row = document.createElement('div');
       row.className = 'tel-final-row' + (i === 0 ? ' top1' : '');
       row.innerHTML = '<span>' + (i + 1) + '. ' + DG.escapeHtml(r.name) +
         (r.id === state.me ? ' (you)' : '') + '</span>' +
-        '<span>' + r.drawRating + '</span><span>' + r.guessRating + '</span>' +
+        '<span>' + r.reaction + '</span>' +
         '<span>' + r.bonus + '</span><span><strong>' + r.total + '</strong></span>';
       table.appendChild(row);
     });
@@ -448,9 +495,6 @@
   });
 
   // ---- UI events ----
-  var submitDrawBtn = $('btn-tel-submit-draw');
-  if (submitDrawBtn) submitDrawBtn.addEventListener('click', submitDrawing);
-
   $('btn-tel-submit-guess').addEventListener('click', submitGuess);
   $('tel-guess-input').addEventListener('keydown', function (e) {
     if (e.key === 'Enter') submitGuess();
@@ -486,18 +530,27 @@
     tel.phase = null;
     tel.ratedItems = {};
     tel.votedChains = {};
+    tel.playerOrder = [];
     state.gameType = 'drawguess';
     state.telLocalDraw = false;
     state.telPhase = null;
     exitShowcaseLayout();
     renderHeaderTransfer(null);
+    renderPlayerOrder();
     DG.hideOverlay('overlay-tel-final');
+  });
+
+  // Keep the passing-order list fresh as players disconnect / reconnect.
+  socket.on('players', function () {
+    if (tel.active) renderPlayerOrder();
   });
 
   socket.on('stateSync', function (data) {
     if (data.gameType !== 'telephone') return;
     tel.active = true;
     state.gameType = 'telephone';
+    if (data.orderNames) cacheOrderNames(data.orderNames);
+    else if (data.playerOrder) tel.playerOrder = data.playerOrder;
     DG.enterGameScreen();
     if (data.telephonePhase === 'wordSelect' && data.wordOptions) {
       showWordOptions({
@@ -518,5 +571,6 @@
       DG.setChatDisabled(false);
     }
     renderStageProgress(data.progress);
+    renderPlayerOrder();
   });
 })();

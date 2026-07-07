@@ -19,7 +19,7 @@
     drawerName: '',
     mode: 'default',
     roundTime: 180,
-    settings: { gameType: 'drawguess', mode: 'default', roundTime: 180 },
+    settings: { gameType: 'drawguess', mode: 'default', roundTime: 180, telDrawTime: 60 },
     bgMode: 'normal',
     drawerWaiting: false,
     canSkipDrawer: false,
@@ -233,6 +233,7 @@
   var segGameType = $('seg-game-type');
   var segMode = $('seg-mode');
   var segTime = $('seg-time');
+  var segTelTime = $('seg-tel-time');
   segGameType.addEventListener('click', function (e) {
     var btn = e.target.closest('.seg-btn');
     if (!btn || !amHost()) return;
@@ -247,6 +248,11 @@
     var btn = e.target.closest('.seg-btn');
     if (!btn || !amHost()) return;
     socket.emit('updateSettings', { roundTime: Number(btn.getAttribute('data-time')) });
+  });
+  segTelTime.addEventListener('click', function (e) {
+    var btn = e.target.closest('.seg-btn');
+    if (!btn || !amHost()) return;
+    socket.emit('updateSettings', { telDrawTime: Number(btn.getAttribute('data-tel-time')) });
   });
 
   function renderSettings() {
@@ -272,6 +278,15 @@
       tbtns[j].classList.toggle('selected', t === state.settings.roundTime);
       tbtns[j].disabled = !host;
     }
+    var telDraw = Number(state.settings.telDrawTime) || 60;
+    var ttbtns = segTelTime.querySelectorAll('.seg-btn');
+    for (var k = 0; k < ttbtns.length; k += 1) {
+      var tt = Number(ttbtns[k].getAttribute('data-tel-time'));
+      ttbtns[k].classList.toggle('selected', tt === telDraw);
+      ttbtns[k].disabled = !host;
+    }
+    var telRuleLabel = $('tel-rule-drawtime');
+    if (telRuleLabel) telRuleLabel.textContent = (telDraw / 60) + ' min';
     if (state.settings.gameType === 'telephone') {
       $('settings-note').textContent = host
         ? 'You are the host. Drawing Telephone requires at least 4 players.'
@@ -721,7 +736,10 @@
 
   // ---------- Toolbar ----------
   function updateColorPreview() {
-    $('color-preview').style.background = tool.erasing ? '#ffffff' : tool.color;
+    var bg = tool.erasing ? '#ffffff' : tool.color;
+    $('color-preview').style.background = bg;
+    var palettePreview = $('palette-preview');
+    if (palettePreview) palettePreview.style.background = bg;
   }
 
   // mode: 'pen' | 'eraser' | 'fill'
@@ -738,8 +756,23 @@
   $('btn-eraser').addEventListener('click', function () { setMode('eraser'); });
   $('btn-fill').addEventListener('click', function () { setMode('fill'); });
 
+  // Color and View are collapsible popovers; opening one closes the other.
   $('btn-palette').addEventListener('click', function () {
-    $('palette').classList.toggle('hidden');
+    var palette = $('palette');
+    var opening = palette.classList.contains('hidden');
+    palette.classList.toggle('hidden', !opening);
+    $('bg-modes').classList.add('hidden');
+    $('btn-palette').classList.toggle('active-popover', opening);
+    $('btn-view').classList.remove('active-popover');
+  });
+
+  $('btn-view').addEventListener('click', function () {
+    var bg = $('bg-modes');
+    var opening = bg.classList.contains('hidden');
+    bg.classList.toggle('hidden', !opening);
+    $('palette').classList.add('hidden');
+    $('btn-view').classList.toggle('active-popover', opening);
+    $('btn-palette').classList.remove('active-popover');
   });
 
   $('btn-undo').addEventListener('click', function () {
@@ -776,12 +809,20 @@
   // ---------- Background / view mode (drawer controlled, synced) ----------
   function applyBgMode(mode) {
     state.bgMode = mode;
-    var filter = 'none';
-    if (mode === 'inverted') filter = 'invert(1)';
-    else if (mode === 'sepia') filter = 'sepia(0.85)';
-    else if (mode === 'dim') filter = 'brightness(0.55)';
-    canvas.style.filter = filter;
-    canvas.style.webkitFilter = filter;
+    // View modes only tint the paper (the canvas background). They must never
+    // alter the strokes or the drawing data. We use mix-blend-mode: multiply so
+    // white paper takes the tint while dark strokes stay dark. No destructive
+    // canvas filter is applied, so toDataURL() still exports true strokes.
+    var paper = '#ffffff';
+    var blend = 'normal';
+    if (mode === 'dim') { paper = '#8f8f8f'; blend = 'multiply'; }
+    else if (mode === 'sepia') { paper = '#e7d6b0'; blend = 'multiply'; }
+    else if (mode === 'inverted') { paper = '#3a3a3a'; blend = 'multiply'; }
+    canvas.style.filter = 'none';
+    canvas.style.webkitFilter = 'none';
+    canvas.style.mixBlendMode = blend;
+    var wrap = canvas.parentElement;
+    if (wrap) wrap.style.background = paper;
     var btns = document.querySelectorAll('.bg-btn');
     for (var i = 0; i < btns.length; i += 1) {
       btns[i].classList.toggle('active', btns[i].getAttribute('data-bg') === mode);
@@ -988,6 +1029,7 @@
     if (s && (s.gameType === 'drawguess' || s.gameType === 'telephone')) state.settings.gameType = s.gameType;
     if (s && (s.mode === 'default' || s.mode === 'free')) state.settings.mode = s.mode;
     if (s && s.roundTime) state.settings.roundTime = s.roundTime;
+    if (s && s.telDrawTime) state.settings.telDrawTime = s.telDrawTime;
     if (screens.lobby.classList.contains('active')) renderLobby();
     else renderSettings();
   });

@@ -519,6 +519,8 @@ input {
   position: relative;
   background: #fff;
   min-height: 0;
+  /* Contain the canvas mix-blend-mode (view tint) to this element only. */
+  isolation: isolate;
 }
 #canvas {
   display: block;
@@ -540,6 +542,7 @@ input {
 /* ---------- Toolbar (floating bottom on mobile) ---------- */
 .toolbar {
   flex: 0 0 auto;
+  position: relative;
   background: var(--panel);
   border-top: 1px solid var(--border);
   padding: 8px 10px;
@@ -547,6 +550,37 @@ input {
   flex-direction: column;
   gap: 8px;
   box-shadow: 0 -2px 10px rgba(31, 59, 45, 0.06);
+}
+/* Collapsible popovers (Color / View) float above the toolbar. */
+.tool-popover {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: calc(100% + 6px);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  padding: 12px 14px;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.tool-btn.active-popover {
+  background: #e4f5e4;
+  border-color: var(--primary);
+  color: var(--primary-dark);
+}
+.palette-current {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 700;
 }
 .tool-row {
   display: flex;
@@ -976,17 +1010,6 @@ input {
   min-height: 16px;
 }
 
-/* Submit-drawing button floating over the canvas */
-.tel-submit-draw {
-  position: absolute;
-  right: 12px;
-  bottom: 12px;
-  width: auto;
-  padding: 10px 18px;
-  box-shadow: var(--shadow);
-  z-index: 6;
-}
-
 /* ---------- Full-page showcase ---------- */
 .tel-showcase-panel {
   flex: 1 1 auto;
@@ -1145,6 +1168,81 @@ input {
 .tel-vote-btns .btn {
   width: auto;
   min-width: 96px;
+}
+
+/* Compact reaction buttons (Flower / Poop) shown under a showcase item */
+.tel-reactions {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+}
+.tel-reaction-btn {
+  padding: 6px 14px;
+  font-size: 15px;
+  font-weight: 800;
+  border: 1.5px solid var(--border);
+  background: #fff;
+  border-radius: 12px;
+  cursor: pointer;
+  color: var(--ink);
+}
+.tel-reaction-btn:disabled {
+  opacity: 0.5;
+}
+.tel-reaction-btn.flower.selected {
+  background: #fde7f0;
+  border-color: #ec407a;
+}
+.tel-reaction-btn.poop.selected {
+  background: #efe3d8;
+  border-color: #8d6e63;
+}
+
+/* Big, eye-catching original-word reveal */
+.tel-reveal-word {
+  font-size: 42px;
+  line-height: 1.1;
+  font-weight: 900;
+  letter-spacing: 2px;
+  text-align: center;
+  text-transform: uppercase;
+  color: var(--primary-dark);
+  margin: 4px 0;
+  animation: tel-pop 0.28s ease-out;
+}
+
+/* Full passing order below the chat input */
+.tel-player-order {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+  padding: 6px 12px calc(6px + var(--safe-bottom));
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+  word-break: break-word;
+}
+.tel-po-arrow {
+  color: var(--muted);
+  opacity: 0.6;
+  margin: 0 2px;
+}
+.tel-po-me {
+  color: var(--accent);
+  font-weight: 800;
+}
+.tel-po-adj {
+  color: var(--primary-dark);
+  font-weight: 700;
+}
+.tel-po-off {
+  color: var(--danger);
+  text-decoration: line-through;
+}
+.tel-po-off.tel-po-me {
+  text-decoration: none;
 }
 .tel-final-table {
   width: 100%;
