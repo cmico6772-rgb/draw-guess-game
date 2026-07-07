@@ -144,6 +144,7 @@
         <div class="header-main">
           <div id="timer" class="timer">03:00</div>
           <div class="word-block">
+            <div id="tel-transfer" class="tel-transfer hidden"></div>
             <div id="word-display" class="word-display"></div>
             <div id="tel-stage-progress" class="tel-stage-progress hidden"></div>
             <div id="hint-display" class="hint-display"></div>
@@ -151,13 +152,35 @@
         </div>
       </header>
 
-      <div class="canvas-wrap">
+      <div id="canvas-wrap" class="canvas-wrap">
         <canvas id="canvas"></canvas>
         <div id="canvas-status" class="canvas-status"></div>
+        <button id="btn-tel-submit-draw" class="btn btn-primary tel-submit-draw hidden">Submit Drawing</button>
         <div id="drawer-wait-banner" class="drawer-wait-banner hidden">
           <p id="drawer-wait-msg">The drawer disconnected. Waiting for them to rejoin...</p>
           <p id="drawer-wait-timer" class="drawer-wait-timer">Waiting for drawer: 30s</p>
           <button id="btn-skip-drawer" class="btn btn-primary hidden">Skip to Next Round</button>
+        </div>
+      </div>
+
+      <!-- Drawing Telephone: full-page showcase feed (chat-style) -->
+      <div id="tel-showcase-panel" class="tel-showcase-panel hidden">
+        <div class="tel-showcase-topbar">
+          <div class="tel-showcase-heading">Answer Showcase</div>
+          <div id="tel-showcase-progress" class="tel-showcase-progress">Chain 1 / 1</div>
+        </div>
+        <div id="tel-showcase-feed" class="tel-showcase-feed"></div>
+        <div id="tel-rating-panel" class="tel-rating-panel hidden">
+          <span class="tel-rate-label">Rate 1&ndash;10</span>
+          <div id="tel-rate-btns" class="tel-rate-btns"></div>
+        </div>
+        <div id="tel-vote-panel" class="tel-vote-panel hidden">
+          <p id="tel-vote-question">Is the final guess similar to the original word?</p>
+          <div class="tel-vote-btns">
+            <button id="btn-tel-vote-yes" class="btn btn-primary">Yes</button>
+            <button id="btn-tel-vote-no" class="btn btn-secondary">No</button>
+          </div>
+          <p id="tel-vote-result" class="hint-small"></p>
         </div>
       </div>
 
@@ -266,8 +289,10 @@
     <div id="overlay-tel-words" class="overlay hidden">
       <div class="overlay-card">
         <h3>Choose your starting word</h3>
+        <p id="tel-word-transfer" class="tel-transfer-line"></p>
         <div id="tel-choose-words" class="choose-words"></div>
         <p id="tel-word-wait" class="hint-small">Waiting for other players...</p>
+        <p id="tel-word-progress" class="tel-overlay-progress"></p>
         <p id="tel-word-timer" class="hint-small"></p>
       </div>
     </div>
@@ -275,31 +300,14 @@
     <div id="overlay-tel-guess" class="overlay hidden">
       <div class="overlay-card tel-guess-card">
         <h3>What do you think this is?</h3>
+        <p id="tel-guess-transfer" class="tel-transfer-line"></p>
         <div id="tel-guess-image-wrap" class="tel-guess-image-wrap">
           <img id="tel-guess-image" class="tel-guess-image" alt="Drawing to guess" />
         </div>
         <input id="tel-guess-input" class="free-word-input" type="text" maxlength="60" placeholder="Type your guess..." autocomplete="off" />
         <button id="btn-tel-submit-guess" class="btn btn-primary">Submit Guess</button>
+        <p id="tel-guess-progress" class="tel-overlay-progress"></p>
         <p id="tel-guess-timer" class="hint-small"></p>
-      </div>
-    </div>
-
-    <div id="overlay-tel-showcase" class="overlay hidden">
-      <div class="overlay-card tel-showcase-card">
-        <h3 id="tel-showcase-title">Chain Showcase</h3>
-        <div id="tel-showcase-feed" class="tel-showcase-feed"></div>
-        <div id="tel-rating-panel" class="tel-rating-panel hidden">
-          <p class="tel-rate-label">Rate this from 1 to 10</p>
-          <div id="tel-rate-btns" class="tel-rate-btns"></div>
-        </div>
-        <div id="tel-vote-panel" class="tel-vote-panel hidden">
-          <p id="tel-vote-question">Is the final guess similar to the original word?</p>
-          <div class="tel-vote-btns">
-            <button id="btn-tel-vote-yes" class="btn btn-primary">Yes</button>
-            <button id="btn-tel-vote-no" class="btn btn-secondary">No</button>
-          </div>
-          <p id="tel-vote-result" class="hint-small"></p>
-        </div>
       </div>
     </div>
 

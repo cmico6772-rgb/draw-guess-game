@@ -78,6 +78,38 @@ class TelephoneGame {
     return this.playerOrder.filter((pid) => pid !== this.currentRateCreator);
   }
 
+  // Transfer order for the chain a player is currently working on:
+  // { prev: {original}|{name}, next: {last}|{name} }
+  getTransferInfo(playerId) {
+    const assign = this.getAssignment(playerId);
+    if (!assign) return null;
+    const originIdx = assign.originIdx;
+    const info = {};
+    if (this.stepIndex <= 0) {
+      info.prev = { original: true };
+    } else {
+      const prevId = playerAt(this.playerOrder, originIdx, this.stepIndex - 1);
+      info.prev = { name: this.playerName(prevId) };
+    }
+    if (this.stepIndex + 1 < this.chainPlan.length) {
+      const nextId = playerAt(this.playerOrder, originIdx, this.stepIndex + 1);
+      info.next = { name: this.playerName(nextId) };
+    } else {
+      info.next = { last: true };
+    }
+    return info;
+  }
+
+  // Word-selection transfer: the player owns the chain, then draws it,
+  // and the next player in order will receive that drawing.
+  getWordSelectTransfer(playerId) {
+    const idx = this.playerOrder.indexOf(playerId);
+    if (idx === -1) return null;
+    const n = this.playerOrder.length;
+    const nextId = this.playerOrder[(idx + 1) % n];
+    return { prev: { original: true }, next: { name: this.playerName(nextId) } };
+  }
+
   getStageProgress() {
     const total = this.playerOrder.length;
     if (this.phase === 'wordSelect') {
@@ -131,7 +163,8 @@ class TelephoneGame {
 
     this.room.phase = 'tel_wordselect';
     this.room.clearTimers();
-    this.beginWordSelect();
+    // Emit game-started FIRST so the client finishes its screen setup
+    // (which hides overlays) before word options open their overlay.
     this.io.to(this.code).emit('telephoneGameStarted', {
       playerOrder: this.playerOrder,
       settings: {
@@ -140,6 +173,7 @@ class TelephoneGame {
         guessTime: GUESS_DURATION,
       },
     });
+    this.beginWordSelect();
     return true;
   }
 
@@ -164,6 +198,7 @@ class TelephoneGame {
         this.io.to(p.socketId).emit('telephoneWordOptions', {
           words: this.wordChoices[pid],
           duration: WORD_SELECT_DURATION,
+          transfer: this.getWordSelectTransfer(pid),
         });
       }
     });
@@ -268,6 +303,7 @@ class TelephoneGame {
           promptWord: this.getPromptForDraw(assign.chain),
           duration: DRAW_DURATION,
           stepIndex: this.stepIndex,
+          transfer: this.getTransferInfo(pid),
         });
       } else {
         const drawStep = this.getDrawingForGuess(assign.chain);
@@ -276,6 +312,7 @@ class TelephoneGame {
           previousPromptWord: drawStep ? drawStep.promptWord : assign.chain.originalWord,
           duration: GUESS_DURATION,
           stepIndex: this.stepIndex,
+          transfer: this.getTransferInfo(pid),
         });
       }
     });
@@ -662,11 +699,13 @@ class TelephoneGame {
     if (this.phase === 'wordSelect' && forPlayer) {
       base.wordOptions = this.wordChoices[forPlayer.playerId];
       base.wordPicked = !!this.wordPicked[forPlayer.playerId];
+      base.transfer = this.getWordSelectTransfer(forPlayer.playerId);
     }
     if (this.phase === 'drawing' && forPlayer) {
       const assign = this.getAssignment(forPlayer.playerId);
       if (assign && assign.step.type === 'draw') {
         base.drawPrompt = this.getPromptForDraw(assign.chain);
+        base.transfer = this.getTransferInfo(forPlayer.playerId);
       }
     }
     if (this.phase === 'guessing' && forPlayer) {
@@ -675,6 +714,7 @@ class TelephoneGame {
         const drawStep = this.getDrawingForGuess(assign.chain);
         base.guessImage = drawStep ? drawStep.imageData : null;
         base.previousPromptWord = drawStep ? drawStep.promptWord : assign.chain.originalWord;
+        base.transfer = this.getTransferInfo(forPlayer.playerId);
       }
     }
     if (this.phase === 'showcase' || this.phase === 'chainVote') {

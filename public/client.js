@@ -31,6 +31,8 @@
   // Finalized drawing history (synced) + the in-progress stroke.
   var history = [];
   var liveStroke = null;
+  // Local redo stack, used only for Drawing Telephone (canvas is local, not synced).
+  var telRedoStack = [];
 
   // Palette colors.
   var COLORS = [
@@ -152,8 +154,9 @@
     hideOverlay('overlay-scores');
     hideOverlay('overlay-tel-words');
     hideOverlay('overlay-tel-guess');
-    hideOverlay('overlay-tel-showcase');
     hideOverlay('overlay-tel-final');
+    var showcasePanel = $('tel-showcase-panel');
+    if (showcasePanel) showcasePanel.classList.add('hidden');
   }
 
   var toastTimer = null;
@@ -657,6 +660,7 @@
       var pf = pointFromEvent(e);
       var op = { flood: true, x: pf.x, y: pf.y, c: tool.color, o: tool.opacity };
       history.push(op);
+      if (state.telLocalDraw) telRedoStack = [];
       renderAll();
       if (!state.telLocalDraw) socket.emit('floodFill', { x: pf.x, y: pf.y, c: tool.color, o: tool.opacity });
       return;
@@ -689,6 +693,7 @@
     drawing = false;
     if (liveStroke && liveStroke.pts.length) {
       history.push(liveStroke);
+      if (state.telLocalDraw) telRedoStack = [];
     }
     liveStroke = null;
     if (!state.telLocalDraw) socket.emit('strokeEnd');
@@ -741,18 +746,29 @@
     if (!canDraw()) return;
     if (state.telLocalDraw) {
       if (!history.length) return;
-      history.pop();
+      telRedoStack.push(history.pop());
       liveStroke = null;
       renderAll();
       return;
     }
     socket.emit('undo');
   });
-  $('btn-redo').addEventListener('click', function () { if (canDraw() && !state.telLocalDraw) socket.emit('redo'); });
+  $('btn-redo').addEventListener('click', function () {
+    if (!canDraw()) return;
+    if (state.telLocalDraw) {
+      if (!telRedoStack.length) return;
+      history.push(telRedoStack.pop());
+      liveStroke = null;
+      renderAll();
+      return;
+    }
+    socket.emit('redo');
+  });
   $('btn-clear').addEventListener('click', function () {
     if (!canDraw()) return;
     history = [];
     liveStroke = null;
+    if (state.telLocalDraw) telRedoStack = [];
     renderAll();
     if (!state.telLocalDraw) socket.emit('clearCanvas');
   });
@@ -774,7 +790,13 @@
 
   $('bg-modes').addEventListener('click', function (e) {
     var b = e.target.closest('.bg-btn');
-    if (!b || !state.isDrawer) return;
+    if (!b) return;
+    // Telephone canvases are local, so the view mode is applied locally only.
+    if (state.telLocalDraw) {
+      applyBgMode(b.getAttribute('data-bg'));
+      return;
+    }
+    if (!state.isDrawer) return;
     socket.emit('bgMode', { mode: b.getAttribute('data-bg') });
   });
 
@@ -829,7 +851,9 @@
   });
 
   function setupToolbarVisibility() {
-    var show = state.isDrawer && !state.drawerWaiting;
+    // The professional toolbar is shown for the Draw & Guess drawer AND for a
+    // player actively drawing on their own canvas in Drawing Telephone.
+    var show = (state.isDrawer && !state.drawerWaiting) || state.telLocalDraw;
     $('toolbar').classList.toggle('hidden', !show);
   }
 
@@ -853,6 +877,7 @@
     state.gameType = 'drawguess';
     history = [];
     liveStroke = null;
+    telRedoStack = [];
     $('chat-log').innerHTML = '';
     $('hint-display').textContent = '';
     $('canvas-status').textContent = '';
@@ -1250,7 +1275,7 @@
     $: $,
     state: state,
     getHistory: function () { return history; },
-    setHistory: function (h) { history = h; liveStroke = null; },
+    setHistory: function (h) { history = h; liveStroke = null; telRedoStack = []; },
     getLiveStroke: function () { return liveStroke; },
     setLiveStroke: function (s) { liveStroke = s; },
     tool: tool,
