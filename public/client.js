@@ -2,7 +2,13 @@
 'use strict';
 
 (function () {
-  var socket = io();
+  var socket = io({
+    reconnection: true,
+    reconnectionAttempts: Infinity,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000,
+    timeout: 10000,
+  });
 
   // ---------- State ----------
   var state = {
@@ -26,6 +32,7 @@
     waitLeft: 0,
     telLocalDraw: false,
     telPhase: null,
+    name: null,
   };
 
   // Finalized drawing history (synced) + the in-progress stroke.
@@ -39,7 +46,22 @@
     '#000000', '#ffffff', '#e53935', '#fb8c00', '#fdd835', '#43a047',
     '#1e88e5', '#8e24aa', '#ec407a', '#6d4c41', '#9e9e9e',
   ];
-  var tool = { color: '#000000', size: 6, opacity: 1, erasing: false, filling: false };
+  // Brush and eraser keep independent sizes; `size` mirrors the active tool.
+  var BRUSH_DEFAULT_SIZE = 6;
+  var ERASER_DEFAULT_SIZE = 24;
+  var tool = {
+    color: '#000000',
+    size: BRUSH_DEFAULT_SIZE,
+    brushSize: BRUSH_DEFAULT_SIZE,
+    eraserSize: ERASER_DEFAULT_SIZE,
+    opacity: 1,
+    erasing: false,
+    filling: false,
+  };
+
+  // Tracks whether the player has made a meaningful mark since the last reset.
+  // Used for reliable blank-canvas detection in Drawing Telephone.
+  var hasDrawn = false;
 
   var selectedChooseWord = null;
 
@@ -116,6 +138,7 @@
         $('input-name').value = r.playerName;
         $('input-code').value = r.roomCode;
         $('home-error').textContent = '';
+        state.name = r.playerName;
         socket.emit('joinRoom', { code: r.roomCode, name: r.playerName, playerId: getPlayerId() });
       });
       li.appendChild(info);
@@ -189,7 +212,8 @@
 
   $('btn-create').addEventListener('click', function () {
     $('home-error').textContent = '';
-    socket.emit('createRoom', { name: getName(), playerId: getPlayerId() });
+    state.name = getName();
+    socket.emit('createRoom', { name: state.name, playerId: getPlayerId() });
   });
 
   $('btn-join').addEventListener('click', function () {
@@ -199,7 +223,8 @@
       return;
     }
     $('home-error').textContent = '';
-    socket.emit('joinRoom', { code: code, name: getName(), playerId: getPlayerId() });
+    state.name = getName();
+    socket.emit('joinRoom', { code: code, name: state.name, playerId: getPlayerId() });
   });
 
   // ---------- Lobby ----------
@@ -211,6 +236,8 @@
 
   $('btn-leave-lobby').addEventListener('click', function () {
     socket.emit('leaveRoom');
+    state.roomCode = null;
+    state.name = null;
     showScreen('home');
     renderRecentRooms();
   });
@@ -682,6 +709,7 @@
       var pf = pointFromEvent(e);
       var op = { flood: true, x: pf.x, y: pf.y, c: tool.color, o: tool.opacity };
       history.push(op);
+      hasDrawn = true;
       if (state.telLocalDraw) telRedoStack = [];
       renderAll();
       if (!state.telLocalDraw) socket.emit('floodFill', { x: pf.x, y: pf.y, c: tool.color, o: tool.opacity });
@@ -715,6 +743,7 @@
     drawing = false;
     if (liveStroke && liveStroke.pts.length) {
       history.push(liveStroke);
+      hasDrawn = true;
       if (state.telLocalDraw) telRedoStack = [];
     }
     liveStroke = null;
@@ -749,14 +778,30 @@
     if (palettePreview) palettePreview.style.background = bg;
   }
 
+  // Reflect the active tool's saved size on the slider, value and preview.
+  function syncSizeUI() {
+    var slider = $('size-slider');
+    if (slider) slider.value = tool.size;
+    $('size-value').textContent = tool.size;
+    var preview = $('size-preview');
+    if (preview) {
+      var px = Math.max(4, Math.min(28, tool.size));
+      preview.style.width = px + 'px';
+      preview.style.height = px + 'px';
+    }
+  }
+
   // mode: 'pen' | 'eraser' | 'fill'
   function setMode(mode) {
     tool.erasing = mode === 'eraser';
     tool.filling = mode === 'fill';
+    // Eraser has its own size; pen/fill use the brush size.
+    tool.size = tool.erasing ? tool.eraserSize : tool.brushSize;
     $('btn-pen').classList.toggle('active', mode === 'pen');
     $('btn-eraser').classList.toggle('active', mode === 'eraser');
     $('btn-fill').classList.toggle('active', mode === 'fill');
     updateColorPreview();
+    syncSizeUI();
   }
 
   $('btn-pen').addEventListener('click', function () { setMode('pen'); });
@@ -808,7 +853,12 @@
     if (!canDraw()) return;
     history = [];
     liveStroke = null;
-    if (state.telLocalDraw) telRedoStack = [];
+    hasDrawn = false; // cleared canvas is blank again
+    if (state.telLocalDraw) {
+      telRedoStack = [];
+      // Drop any server-side snapshot so a cleared canvas stays blank.
+      socket.emit('telephoneSnapshot', { clear: true });
+    }
     renderAll();
     if (!state.telLocalDraw) socket.emit('clearCanvas');
   });
@@ -851,11 +901,10 @@
   var sizeSlider = $('size-slider');
   sizeSlider.addEventListener('input', function () {
     tool.size = Number(sizeSlider.value);
-    $('size-value').textContent = tool.size;
-    var preview = $('size-preview');
-    var px = Math.max(4, Math.min(28, tool.size));
-    preview.style.width = px + 'px';
-    preview.style.height = px + 'px';
+    // Save the size to the tool that is currently selected.
+    if (tool.erasing) tool.eraserSize = tool.size;
+    else tool.brushSize = tool.size;
+    syncSizeUI();
   });
 
   var opacitySlider = $('opacity-slider');
@@ -949,10 +998,49 @@
     }
   }
 
+  // ================= Connection status =================
+  function setConnStatus(kind, text) {
+    var el = $('conn-status');
+    if (!el) return;
+    el.className = 'conn-status conn-' + kind + (kind === 'connected' ? ' hidden' : '');
+    el.textContent = text || '';
+  }
+
+  // Re-attach to the room after a reconnect (a new socket has no room binding).
+  function rejoinAfterReconnect() {
+    if (state.roomCode && state.name) {
+      socket.emit('joinRoom', {
+        code: state.roomCode,
+        name: state.name,
+        playerId: getPlayerId(),
+      });
+      if (!screens.game.classList.contains('active') && !screens.lobby.classList.contains('active')) {
+        // stay put; roomJoined/stateSync will restore the correct screen
+      }
+      socket.emit('requestDrawHistory');
+    }
+  }
+
   // ================= Socket events =================
   socket.on('connect', function () {
-    // state.me is stable playerId from roomJoined, not socket.id
+    setConnStatus('connected', '');
+    rejoinAfterReconnect();
   });
+  socket.on('disconnect', function () {
+    setConnStatus('lost', 'Connection lost. Trying to reconnect...');
+  });
+  socket.on('connect_error', function () {
+    setConnStatus('lost', 'Connection lost. Trying to reconnect...');
+  });
+  if (socket.io && socket.io.on) {
+    socket.io.on('reconnect_attempt', function () {
+      setConnStatus('reconnecting', 'Reconnecting...');
+    });
+    socket.io.on('reconnect', function () {
+      setConnStatus('reconnected', 'Reconnected.');
+      setTimeout(function () { setConnStatus('connected', ''); }, 1500);
+    });
+  }
 
   socket.on('errorMsg', function (data) {
     if (screens.home.classList.contains('active')) {
@@ -964,6 +1052,8 @@
 
   socket.on('removedFromRoom', function (data) {
     socket.emit('leaveRoom');
+    state.roomCode = null;
+    state.name = null;
     hideAllOverlays();
     showScreen('home');
     renderRecentRooms();
@@ -1283,6 +1373,8 @@
 
   $('btn-leave-gameend').addEventListener('click', function () {
     socket.emit('leaveRoom');
+    state.roomCode = null;
+    state.name = null;
     hideAllOverlays();
     showScreen('home');
     renderRecentRooms();
@@ -1294,10 +1386,6 @@
     if (data && data.players) state.players = data.players;
     resetClientGameState();
     enterLobbyScreen();
-  });
-
-  socket.on('reconnect', function () {
-    socket.emit('requestDrawHistory');
   });
 
   function setChatDisabled(disabled, msg) {
@@ -1314,11 +1402,7 @@
   renderRecentRooms();
   buildSwatches();
   updateColorPreview();
-  (function initSizePreview() {
-    var preview = $('size-preview');
-    preview.style.width = '6px';
-    preview.style.height = '6px';
-  })();
+  syncSizeUI();
 
   window.DG = {
     socket: socket,
@@ -1353,5 +1437,7 @@
     renderLobby: renderLobby,
     applyBgMode: applyBgMode,
     canDraw: canDraw,
+    getHasDrawn: function () { return hasDrawn; },
+    resetHasDrawn: function () { hasDrawn = false; },
   };
 })();

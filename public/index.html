@@ -137,7 +137,7 @@
               <li>Minimum players: <strong>4</strong></li>
               <li>Everyone draws and guesses at the same time</li>
               <li>Drawing time: <strong id="tel-rule-drawtime">1 min</strong> (host choice)</li>
-              <li>Guessing time: <strong>20 seconds</strong></li>
+              <li>Guessing time: <strong>35 seconds</strong></li>
               <li>Word selection: <strong>10 seconds</strong></li>
               <li>Each stage advances when everyone finishes or the timer ends</li>
               <li>Final score = reaction points + successful chain bonuses</li>
@@ -333,6 +333,7 @@
         <p id="tel-guess-transfer" class="tel-transfer-line"></p>
         <div id="tel-guess-image-wrap" class="tel-guess-image-wrap">
           <img id="tel-guess-image" class="tel-guess-image" alt="Drawing to guess" />
+          <p id="tel-guess-placeholder" class="tel-guess-placeholder hidden">No drawing was submitted.</p>
         </div>
         <input id="tel-guess-input" class="free-word-input" type="text" maxlength="60" placeholder="Type your guess..." autocomplete="off" />
         <button id="btn-tel-submit-guess" class="btn btn-primary">Submit Guess</button>
@@ -359,6 +360,9 @@
         <button id="btn-close-scores" class="btn btn-secondary">Close</button>
       </div>
     </div>
+
+    <!-- Connection status -->
+    <div id="conn-status" class="conn-status hidden"></div>
 
     <!-- Toast -->
     <div id="toast" class="toast hidden"></div>

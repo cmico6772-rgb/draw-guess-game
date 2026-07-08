@@ -5,7 +5,7 @@ const { pickWords, normalizeWordKey } = require('./words');
 const MIN_PLAYERS = 4;
 const WORD_SELECT_DURATION = 10;
 const DRAW_DURATION = 60;
-const GUESS_DURATION = 20;
+const GUESS_DURATION = 35;
 const SHOWCASE_ORIGINAL_WAIT = 5;
 const SHOWCASE_DRAW_WAIT = 15;
 const SHOWCASE_GUESS_WAIT = 10;
@@ -38,6 +38,12 @@ function playerAt(order, originIdx, offset) {
   return order[(originIdx + offset) % n];
 }
 
+// Basic validation for a submitted/backup drawing image. Rejects empty or
+// obviously corrupt data so a valid drawing is never overwritten by garbage.
+function isValidImageData(s) {
+  return typeof s === 'string' && s.indexOf('data:image/') === 0 && s.length > 128;
+}
+
 class TelephoneGame {
   constructor(room) {
     this.room = room;
@@ -53,6 +59,7 @@ class TelephoneGame {
     this.tickTimer = null;
     this.phaseTimer = null;
     this.submissions = {};
+    this.snapshots = {}; // playerId -> { stepIndex, imageData } backup during drawing
     this.showcaseChainIdx = 0;
     this.showcaseItemIdx = 0;
     this.showcaseRatings = {};
@@ -306,6 +313,7 @@ class TelephoneGame {
   beginStep() {
     this._stageLock = false;
     this.submissions = {};
+    this.snapshots = {};
     const step = this.chainPlan[this.stepIndex];
     if (!step) {
       this.beginShowcase();
@@ -352,27 +360,90 @@ class TelephoneGame {
     this.scheduleStageTimeout(() => this.timeoutStep(), dur);
   }
 
-  submitDrawing(playerId, data, isAuto) {
+  // Store (or clear) a periodic backup of the in-progress drawing for the
+  // current step. `data` is { imageData } or { clear: true }.
+  saveSnapshot(playerId, data) {
     if (this.phase !== 'drawing' || this._stageLock) return;
-    if (this.submissions[playerId] && !isAuto) return;
     const assign = this.getAssignment(playerId);
     if (!assign || assign.step.type !== 'draw') return;
+    if (this.submissions[playerId]) return; // already finalized
+    if (data && data.clear) {
+      delete this.snapshots[playerId];
+      return;
+    }
+    const imageData = data && data.imageData;
+    if (!isValidImageData(imageData)) return;
+    this.snapshots[playerId] = { stepIndex: this.stepIndex, imageData };
+  }
 
-    const strokes = data && data.strokes ? data.strokes : [];
-    const imageData = data && data.imageData ? data.imageData : null;
+  latestSnapshotFor(playerId) {
+    const snap = this.snapshots[playerId];
+    if (snap && snap.stepIndex === this.stepIndex && isValidImageData(snap.imageData)) {
+      return snap.imageData;
+    }
+    return null;
+  }
+
+  // Returns { ok, missed, usedPreviousDrawing } so the client can confirm the
+  // save (acknowledgement flow).
+  submitDrawing(playerId, data, isAuto) {
+    if (this.phase !== 'drawing' || this._stageLock) return { ok: false };
+    if (this.submissions[playerId] && !isAuto) return { ok: true, duplicate: true };
+    const assign = this.getAssignment(playerId);
+    if (!assign || assign.step.type !== 'draw') return { ok: false };
+
+    const strokes = data && Array.isArray(data.strokes) ? data.strokes : [];
+    const validImage = data && isValidImageData(data.imageData) ? data.imageData : null;
+    const clientBlank = data && data.blank === true;
+    const snapImage = this.latestSnapshotFor(playerId);
+
+    let imageData = validImage;
+    let missed = false;
+    let usedPreviousDrawing = false;
+
+    if (clientBlank) {
+      // The player made no meaningful marks. Forward a previous drawing if any.
+      missed = true;
+      const prevDraw = this.getDrawingForGuess(assign.chain);
+      if (prevDraw && prevDraw.imageData) {
+        imageData = prevDraw.imageData;
+        usedPreviousDrawing = true;
+      } else {
+        imageData = null;
+      }
+    } else if (!imageData) {
+      // Not blank, but the final export was missing/invalid. Prefer the latest
+      // valid snapshot before giving up (avoids losing a real drawing).
+      if (snapImage) {
+        imageData = snapImage;
+      } else {
+        missed = true;
+        const prevDraw = this.getDrawingForGuess(assign.chain);
+        if (prevDraw && prevDraw.imageData) {
+          imageData = prevDraw.imageData;
+          usedPreviousDrawing = true;
+        } else {
+          imageData = null;
+        }
+      }
+    }
 
     assign.chain.steps[this.stepIndex] = {
       type: 'draw',
       playerId,
       promptWord: this.getPromptForDraw(assign.chain),
-      strokes,
+      strokes: missed ? [] : strokes,
       imageData,
+      missed,
+      usedPreviousDrawing,
       ratings: {},
     };
     assign.chain.participants.add(playerId);
     this.submissions[playerId] = true;
+    delete this.snapshots[playerId];
     this.broadcastStage();
     this.tryFinishStep();
+    return { ok: true, missed, usedPreviousDrawing };
   }
 
   submitGuess(playerId, text, isAuto) {
@@ -383,13 +454,17 @@ class TelephoneGame {
 
     const drawStep = this.getDrawingForGuess(assign.chain);
     const fallback = drawStep ? drawStep.promptWord : assign.chain.originalWord;
-    const guessText = String(text || '').trim().slice(0, 60) || fallback;
+    const typed = String(text || '').trim().slice(0, 60);
+    const missed = typed.length === 0; // no real guess entered -> auto-passed
+    const guessText = typed || fallback;
 
     assign.chain.steps[this.stepIndex] = {
       type: 'guess',
       playerId,
       previousPromptWord: drawStep ? drawStep.promptWord : assign.chain.originalWord,
       guessText,
+      missed,
+      autoPassedWord: missed ? fallback : undefined,
       ratings: {},
     };
     assign.chain.participants.add(playerId);
@@ -417,11 +492,17 @@ class TelephoneGame {
       const assign = this.getAssignment(pid);
       if (!assign) return;
       if (assign.step.type === 'draw') {
-        this.submitDrawing(pid, { strokes: [], imageData: null }, true);
+        // No submission by the deadline. Use the latest saved snapshot if the
+        // player drew something (e.g. disconnected); otherwise blank (missed).
+        const snap = this.latestSnapshotFor(pid);
+        if (snap) {
+          this.submitDrawing(pid, { strokes: [], imageData: snap, blank: false }, true);
+        } else {
+          this.submitDrawing(pid, { strokes: [], imageData: null, blank: true }, true);
+        }
       } else {
-        const drawStep = this.getDrawingForGuess(assign.chain);
-        const fallback = drawStep ? drawStep.promptWord : assign.chain.originalWord;
-        this.submitGuess(pid, fallback, true);
+        // No submission by the deadline -> empty guess (missed, auto-passed).
+        this.submitGuess(pid, '', true);
       }
     });
     this.finishStep();
@@ -477,7 +558,10 @@ class TelephoneGame {
           imageData: st.imageData,
           promptWord: st.promptWord,
           wait: SHOWCASE_DRAW_WAIT,
-          rateable: true,
+          // A missed (blank) drawing is not rated - the creator did not draw it.
+          rateable: !st.missed,
+          missed: !!st.missed,
+          usedPreviousDrawing: !!st.usedPreviousDrawing,
         });
       } else {
         items.push({
@@ -486,7 +570,10 @@ class TelephoneGame {
           playerId: st.playerId,
           text: st.guessText,
           wait: SHOWCASE_GUESS_WAIT,
-          rateable: true,
+          // A missed guess is not rated - it was auto-passed, not a real guess.
+          rateable: !st.missed,
+          missed: !!st.missed,
+          autoPassedWord: st.autoPassedWord,
         });
       }
     });

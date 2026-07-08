@@ -30,6 +30,8 @@
     votedChains: {},
     playerOrder: [],
     playerNames: {},
+    lastSnapshot: null,
+    autoSaveTimer: null,
   };
 
   function playerName(id) {
@@ -44,17 +46,24 @@
     orderNames.forEach(function (o) { tel.playerNames[o.id] = o.name; });
   }
 
-  // Export the current canvas as a white-background PNG at a sane resolution.
-  // Drawing from the canvas bitmap (not the CSS-filtered view) means the export
-  // always preserves the real strokes as drawn, regardless of the View mode.
+  function isValidImage(s) {
+    return typeof s === 'string' && s.indexOf('data:image/') === 0 && s.length > 128;
+  }
+
+  // Export the current canvas as a compressed, white-background image at a sane
+  // resolution. Drawing from the canvas bitmap (not the CSS-filtered view) means
+  // the export preserves the real strokes regardless of the View mode. Returns a
+  // valid data URL or null (never an empty string), and never throws.
   function exportCanvasImage() {
     try {
       var src = DG.canvas;
+      if (!src || src.width <= 0 || src.height <= 0) return null;
       var sizeInfo = DG.getCssSize();
       var w = sizeInfo.w || src.width;
       var h = sizeInfo.h || src.height;
       if (!w || !h) return null;
-      var maxW = 720;
+      // Cap the shared image width for network stability (visible canvas stays sharp).
+      var maxW = 1000;
       var scale = w > maxW ? maxW / w : 1;
       var off = document.createElement('canvas');
       off.width = Math.max(1, Math.round(w * scale));
@@ -63,9 +72,34 @@
       octx.fillStyle = '#ffffff';
       octx.fillRect(0, 0, off.width, off.height);
       octx.drawImage(src, 0, 0, off.width, off.height);
-      return off.toDataURL('image/png');
+      var url = '';
+      try { url = off.toDataURL('image/jpeg', 0.8); } catch (e) { url = ''; }
+      if (!isValidImage(url)) {
+        try { url = off.toDataURL('image/png'); } catch (e2) { url = ''; }
+      }
+      return isValidImage(url) ? url : null;
     } catch (e) {
       return null;
+    }
+  }
+
+  // Periodic backup of the in-progress drawing while the player is drawing.
+  function startAutoSave() {
+    stopAutoSave();
+    tel.autoSaveTimer = setInterval(function () {
+      if (!state.telLocalDraw || tel.submittedDraw) return;
+      if (!DG.getHasDrawn()) return;
+      var img = exportCanvasImage();
+      if (img) {
+        tel.lastSnapshot = img;
+        socket.emit('telephoneSnapshot', { imageData: img });
+      }
+    }, 5000);
+  }
+  function stopAutoSave() {
+    if (tel.autoSaveTimer) {
+      clearInterval(tel.autoSaveTimer);
+      tel.autoSaveTimer = null;
     }
   }
 
@@ -73,6 +107,7 @@
     DG.setHistory([]);
     DG.fillWhite();
     DG.renderAll();
+    DG.resetHasDrawn();
   }
 
   // ---- Transfer order (Previous — Me — Next) ----
@@ -139,6 +174,7 @@
   // ---- Showcase layout helpers (full page inside the game screen) ----
   function enterShowcaseLayout() {
     setDrawFocus(false);
+    stopAutoSave();
     var cw = $('canvas-wrap');
     if (cw) cw.classList.add('hidden');
     $('toolbar').classList.add('hidden');
@@ -178,6 +214,8 @@
     DG.renderTimer(duration || 60);
     DG.setChatDisabled(true, 'Chat is disabled during drawing and guessing.');
     tel.submittedDraw = false;
+    tel.lastSnapshot = null;
+    startAutoSave();
     setDrawFocus(true);
     var submitBtn = $('btn-tel-submit-draw');
     if (submitBtn) {
@@ -193,6 +231,7 @@
     state.telLocalDraw = false;
     state.telPhase = 'guessing';
     setDrawFocus(false);
+    stopAutoSave();
     exitShowcaseLayout();
     $('toolbar').classList.add('hidden');
     var sBtn = $('btn-tel-submit-draw');
@@ -201,15 +240,18 @@
     $('chip-round').textContent = 'Guessing';
     $('chip-drawer').textContent = 'Guess the drawing';
     renderHeaderTransfer(transfer);
-    DG.renderTimer(duration || 20);
+    DG.renderTimer(duration || 35);
     DG.setChatDisabled(true, 'Chat is disabled during drawing and guessing.');
     var img = $('tel-guess-image');
+    var placeholder = $('tel-guess-placeholder');
     if (imageData) {
       img.src = imageData;
       img.classList.remove('hidden');
+      if (placeholder) placeholder.classList.add('hidden');
     } else {
       img.src = '';
       img.classList.add('hidden');
+      if (placeholder) placeholder.classList.remove('hidden');
     }
     setOverlayTransfer('tel-guess-transfer', transfer);
     $('tel-guess-input').value = '';
@@ -219,24 +261,61 @@
     renderPlayerOrder();
   }
 
-  // Submit the current canvas. Manual (Submit button) enables early advance;
-  // auto (timer end) captures whatever is on the canvas. After submitting, the
-  // canvas is locked for this player until the next stage.
+  // Submit the current canvas with an acknowledgement + retry flow. Manual
+  // (Submit button) enables early advance; auto (timer end) captures the canvas.
+  // After submitting, the canvas is locked for this player until the next stage.
   function submitDrawing(auto) {
     if (tel.submittedDraw) return;
     tel.submittedDraw = true;
     state.telLocalDraw = false; // lock the canvas for this player
+    stopAutoSave();
+
+    var hasDrawn = DG.getHasDrawn();
+    var img = exportCanvasImage();
+    // If the export failed but the player did draw, fall back to the last
+    // snapshot rather than sending a blank.
+    if (!img && hasDrawn && tel.lastSnapshot) img = tel.lastSnapshot;
+    var blank = !hasDrawn && !img;
+
     var submitBtn = $('btn-tel-submit-draw');
     if (submitBtn) {
       submitBtn.disabled = true;
-      submitBtn.textContent = 'Submitted';
+      submitBtn.textContent = 'Saving...';
     }
-    $('canvas-status').textContent = auto
-      ? 'Time up \u2014 drawing submitted.'
-      : 'Drawing submitted. Waiting for other players...';
-    socket.emit('telephoneSubmitDrawing', {
+    $('canvas-status').textContent = auto ? 'Time up \u2014 saving drawing...' : 'Saving drawing...';
+
+    sendDrawingWithRetry({
       strokes: DG.getHistory().slice(),
-      imageData: exportCanvasImage(),
+      imageData: img,
+      blank: blank,
+    }, 0);
+  }
+
+  function sendDrawingWithRetry(payload, attempt) {
+    var acked = false;
+    var timer = setTimeout(function () {
+      if (acked) return;
+      if (attempt < 2 && socket.connected) {
+        $('canvas-status').textContent = 'Reconnecting / retrying...';
+        sendDrawingWithRetry(payload, attempt + 1);
+      } else {
+        // Give up waiting; the server timer + auto-saved snapshot will cover it.
+        var b1 = $('btn-tel-submit-draw');
+        if (b1) b1.textContent = 'Submitted';
+        $('canvas-status').textContent = 'Drawing saved.';
+      }
+    }, 3000);
+
+    socket.emit('telephoneSubmitDrawing', payload, function (res) {
+      acked = true;
+      clearTimeout(timer);
+      var b2 = $('btn-tel-submit-draw');
+      if (b2) b2.textContent = 'Submitted';
+      if (res && res.usedPreviousDrawing) {
+        $('canvas-status').textContent = 'Using last saved drawing.';
+      } else {
+        $('canvas-status').textContent = 'Drawing saved.';
+      }
     });
   }
 
@@ -265,6 +344,63 @@
     return div;
   }
 
+  // Fly a temporary flower/poop from the clicked button along a curved arc to
+  // the rated card, then bloom/splat and fade out. Visual only - never touches
+  // scoring or game state, and fails silently if anything is unavailable.
+  function playReactionAnimation(kind, buttonEl, targetEl) {
+    try {
+      if (!buttonEl || !targetEl || typeof requestAnimationFrame !== 'function') return;
+      var br = buttonEl.getBoundingClientRect();
+      var tr = targetEl.getBoundingClientRect();
+      var startX = br.left + br.width / 2;
+      var startY = br.top + br.height / 2;
+      var endX = tr.left + tr.width / 2;
+      var endY = tr.top + tr.height / 2;
+      // Control point above the path -> gentle arc (mobile-game feel).
+      var ctrlX = (startX + endX) / 2;
+      var ctrlY = Math.min(startY, endY) - 90;
+
+      var el = document.createElement('div');
+      el.className = 'reaction-projectile ' + (kind === 'flower' ? 'reaction-flower' : 'reaction-poop');
+      el.textContent = kind === 'flower' ? '\uD83C\uDF38' : '\uD83D\uDCA9';
+      el.style.left = startX + 'px';
+      el.style.top = startY + 'px';
+      document.body.appendChild(el);
+
+      var flyMs = 650;
+      var spin = kind === 'poop' ? 300 : 160; // poop tumbles more
+      var startTs = null;
+      function frame(ts) {
+        if (startTs === null) startTs = ts;
+        var t = Math.min(1, (ts - startTs) / flyMs);
+        var mt = 1 - t;
+        var x = mt * mt * startX + 2 * mt * t * ctrlX + t * t * endX;
+        var y = mt * mt * startY + 2 * mt * t * ctrlY + t * t * endY;
+        var rot = spin * t;
+        var scale = 1 + 0.25 * Math.sin(t * Math.PI);
+        el.style.left = x + 'px';
+        el.style.top = y + 'px';
+        el.style.transform = 'translate(-50%, -50%) rotate(' + rot + 'deg) scale(' + scale + ')';
+        if (t < 1) {
+          requestAnimationFrame(frame);
+        } else {
+          // Impact: hand off to a CSS keyframe (bloom or splat) that also fades.
+          el.style.transform = '';
+          el.classList.add(kind === 'flower' ? 'reaction-bloom' : 'reaction-splat');
+          var done = false;
+          var cleanup = function () {
+            if (done) return;
+            done = true;
+            if (el.parentNode) el.parentNode.removeChild(el);
+          };
+          el.addEventListener('animationend', cleanup);
+          setTimeout(cleanup, 1200); // safety net
+        }
+      }
+      requestAnimationFrame(frame);
+    } catch (e) { /* animation is non-critical */ }
+  }
+
   // Two compact reaction buttons: Flower (+10) and Poop (-10). One vote only,
   // and never on your own item.
   function buildReactionButtons(bubble, itemKey, creatorId) {
@@ -285,11 +421,17 @@
       b.textContent = r.label;
       b.addEventListener('click', function () {
         if (tel.ratedItems[itemKey]) return;
+        // Scoring is applied immediately; the animation is purely visual.
         socket.emit('telephoneRateItem', { itemKey: itemKey, reaction: r.key });
         tel.ratedItems[itemKey] = true;
         var kids = wrap.querySelectorAll('.tel-reaction-btn');
         for (var k = 0; k < kids.length; k += 1) kids[k].disabled = true;
         b.classList.add('selected');
+        playReactionAnimation(r.key, b, bubble);
+        var note = document.createElement('span');
+        note.className = 'tel-reaction-sent';
+        note.textContent = 'Reaction sent!';
+        wrap.appendChild(note);
       });
       wrap.appendChild(b);
     });
@@ -384,8 +526,12 @@
     // The server auto-fills missing actions when the timer ends, but it cannot
     // read a player's local canvas. Push the current canvas / typed guess just
     // before the server times out so real work is not lost as a blank.
+    // Auto-submit the canvas just before the server times out, but only if the
+    // player actually drew. If they did not draw, we let the server's timeout
+    // decide (use their saved snapshot if any, otherwise a blank/missed draw),
+    // which avoids a connected-but-idle client clobbering a saved snapshot.
     if (data.phase === 'drawing' && data.timeLeft != null && data.timeLeft <= 2 &&
-        state.telLocalDraw && !tel.submittedDraw) {
+        state.telLocalDraw && !tel.submittedDraw && DG.getHasDrawn()) {
       submitDrawing(true);
     }
     if (data.phase === 'guessing' && data.timeLeft != null && data.timeLeft <= 1 &&
@@ -445,30 +591,55 @@
         }, 3000);
       })(item.text);
     } else if (item.kind === 'draw') {
-      var imgHtml = item.imageData
-        ? '<img class="tel-bubble-img" src="' + item.imageData + '" alt="Drawing"/>'
-        : '<em>(blank drawing)</em>';
-      var bubble = appendShowcaseBubble({
-        author: playerName(item.playerId),
-        html: 'I drew it like this:<br/>' + imgHtml,
-      });
-      buildReactionButtons(bubble, data.itemKey, item.playerId);
+      if (item.missed) {
+        // The player did not draw. Explain clearly; show the forwarded image
+        // if one was passed, otherwise state none was available. No rating.
+        var imgFwd = item.imageData
+          ? '<br/><img class="tel-bubble-img" src="' + item.imageData + '" alt="Drawing"/>'
+          : '';
+        var msg = item.usedPreviousDrawing
+          ? '<strong>' + DG.escapeHtml(playerName(item.playerId)) +
+            '</strong> did not draw. system755 passed the previous drawing forward.' + imgFwd
+          : '<strong>' + DG.escapeHtml(playerName(item.playerId)) +
+            '</strong> did not draw. No previous drawing was available.';
+        appendShowcaseBubble({ cls: 'system', author: NARRATOR, html: msg });
+      } else {
+        var imgHtml = item.imageData
+          ? '<img class="tel-bubble-img" src="' + item.imageData + '" alt="Drawing"/>'
+          : '<em>(blank drawing)</em>';
+        var bubble = appendShowcaseBubble({
+          author: playerName(item.playerId),
+          html: 'I drew it like this:<br/>' + imgHtml,
+        });
+        buildReactionButtons(bubble, data.itemKey, item.playerId);
+      }
     } else if (item.kind === 'guess') {
-      // Suspense reveal: "<Player> guessed..." then the big word after 3s.
-      appendShowcaseBubble({
-        author: playerName(item.playerId),
-        html: 'guessed...',
-      });
-      (function (word, key, creator) {
-        setTimeout(function () {
-          if (tel.currentItemKey !== key) return;
-          var revealBubble = appendShowcaseBubble({
-            cls: 'reveal',
-            html: '<div class="tel-reveal-word">' + DG.escapeHtml(word) + '</div>',
-          });
-          buildReactionButtons(revealBubble, key, creator);
-        }, 3000);
-      })(item.text, data.itemKey, item.playerId);
+      if (item.missed) {
+        // The player did not guess; system755 auto-passed the previous word.
+        appendShowcaseBubble({
+          cls: 'system',
+          author: NARRATOR,
+          html: '<strong>' + DG.escapeHtml(playerName(item.playerId)) +
+            '</strong> did not guess. system755 passed the previous drawing word: <em>' +
+            DG.escapeHtml(item.autoPassedWord || item.text || '') + '</em>',
+        });
+      } else {
+        // Suspense reveal: "<Player> guessed..." then the big word after 3s.
+        appendShowcaseBubble({
+          author: playerName(item.playerId),
+          html: 'guessed...',
+        });
+        (function (word, key, creator) {
+          setTimeout(function () {
+            if (tel.currentItemKey !== key) return;
+            var revealBubble = appendShowcaseBubble({
+              cls: 'reveal',
+              html: '<div class="tel-reveal-word">' + DG.escapeHtml(word) + '</div>',
+            });
+            buildReactionButtons(revealBubble, key, creator);
+          }, 3000);
+        })(item.text, data.itemKey, item.playerId);
+      }
     }
   });
 
@@ -564,6 +735,8 @@
   });
   $('btn-tel-leave').addEventListener('click', function () {
     socket.emit('leaveRoom');
+    state.roomCode = null;
+    state.name = null;
     DG.hideAllOverlays();
     exitShowcaseLayout();
     DG.showScreen('home');
@@ -578,6 +751,8 @@
     state.gameType = 'drawguess';
     state.telLocalDraw = false;
     state.telPhase = null;
+    stopAutoSave();
+    tel.lastSnapshot = null;
     setDrawFocus(false);
     exitShowcaseLayout();
     renderHeaderTransfer(null);

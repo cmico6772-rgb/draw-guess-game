@@ -11,7 +11,13 @@ const PORT = process.env.PORT || 3000;
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+// Reliability tuning: tolerate brief mobile/WeChat network drops without
+// dropping the socket, and allow reasonably large (compressed) image payloads.
+const io = new Server(server, {
+  pingTimeout: 60000,
+  pingInterval: 25000,
+  maxHttpBufferSize: 1e7, // 10 MB (compressed drawings are far smaller)
+});
 
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
@@ -184,11 +190,23 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('telephoneSubmitDrawing', (data = {}) => {
+  socket.on('telephoneSubmitDrawing', (data = {}, ack) => {
+    const room = currentRoom();
+    let result = { ok: false };
+    if (room && room.telephone) {
+      const pid = room.playerIdFromSocket(socket.id);
+      if (pid) result = room.telephone.submitDrawing(pid, data) || { ok: true };
+    }
+    if (typeof ack === 'function') ack(result);
+  });
+
+  // Lightweight periodic backup of the in-progress drawing, so a disconnect
+  // before the timer ends does not lose the player's work.
+  socket.on('telephoneSnapshot', (data = {}) => {
     const room = currentRoom();
     if (room && room.telephone) {
       const pid = room.playerIdFromSocket(socket.id);
-      if (pid) room.telephone.submitDrawing(pid, data);
+      if (pid) room.telephone.saveSnapshot(pid, data);
     }
   });
 

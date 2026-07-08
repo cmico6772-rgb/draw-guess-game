@@ -943,6 +943,35 @@ input {
   text-align: center;
 }
 
+/* Connection status indicator */
+.conn-status {
+  position: fixed;
+  top: calc(6px + var(--safe-top));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 200;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  box-shadow: var(--shadow-soft);
+  pointer-events: none;
+  max-width: 90%;
+  text-align: center;
+}
+.conn-status.conn-lost { background: var(--danger); }
+.conn-status.conn-reconnecting { background: var(--accent); }
+.conn-status.conn-reconnected { background: var(--primary-dark); }
+
+.tel-guess-placeholder {
+  margin: 0;
+  padding: 24px 8px;
+  text-align: center;
+  color: var(--muted);
+  font-weight: 600;
+}
+
 /* Word category selector (lobby) */
 .category-select {
   width: 100%;
@@ -1244,6 +1273,51 @@ input {
 .tel-reaction-btn.poop.selected {
   background: #efe3d8;
   border-color: #8d6e63;
+}
+
+.tel-reaction-sent {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--primary-dark);
+  align-self: center;
+  animation: tel-pop 0.2s ease-out;
+}
+
+/* ---- Flower / poop reaction projectile animation (visual only) ---- */
+.reaction-projectile {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 300;
+  font-size: 34px;
+  line-height: 1;
+  pointer-events: none;
+  will-change: transform, left, top, opacity;
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(0 2px 3px rgba(31, 59, 45, 0.3));
+}
+.reaction-flower.reaction-bloom {
+  animation: reaction-bloom 0.7s ease-out forwards;
+}
+.reaction-poop.reaction-splat {
+  animation: reaction-splat 0.7s ease-out forwards;
+}
+/* Flower: bloom bigger, soft glow, hold, then fade */
+@keyframes reaction-bloom {
+  0% { transform: translate(-50%, -50%) scale(1); opacity: 1; text-shadow: 0 0 0 rgba(236, 64, 122, 0); }
+  35% { transform: translate(-50%, -50%) scale(2); opacity: 1; text-shadow: 0 0 14px rgba(236, 64, 122, 0.6); }
+  60% { transform: translate(-50%, -50%) scale(1.6); opacity: 1; }
+  75% { transform: translate(-50%, -50%) scale(1.6); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(1.6); opacity: 0; }
+}
+/* Poop: squash flat and wide, small bounce, hold, then fade */
+@keyframes reaction-splat {
+  0% { transform: translate(-50%, -50%) scale(1, 1); opacity: 1; }
+  22% { transform: translate(-50%, -50%) scale(1.8, 0.55); opacity: 1; }
+  38% { transform: translate(-50%, -50%) scale(1.45, 0.85); opacity: 1; }
+  52% { transform: translate(-50%, -50%) scale(1.65, 0.7); opacity: 1; }
+  78% { transform: translate(-50%, -50%) scale(1.65, 0.7); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(1.65, 0.7); opacity: 0; }
 }
 
 /* Big, eye-catching original-word reveal */
