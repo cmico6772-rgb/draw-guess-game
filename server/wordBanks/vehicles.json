@@ -1,0 +1,12 @@
+[
+  "car", "bus", "train", "airplane", "boat", "ship", "helicopter", "motorcycle", "taxi", "truck",
+  "rocket", "scooter", "bicycle", "subway", "tram", "ambulance", "police car", "fire truck", "tractor", "skateboard",
+  "yacht", "canoe", "ferry", "van", "race car", "tank", "spaceship", "hot air balloon", "cable car", "snowmobile",
+  "jet ski", "forklift", "bulldozer", "excavator", "crane", "electric scooter", "school bus", "double-decker bus",
+  "convertible", "limousine", "pickup truck", "garbage truck", "cement mixer", "dump truck", "tow truck", "delivery truck", "ice cream truck", "monster truck",
+  "go-kart", "bumper car", "roller coaster", "bullet train", "steam train", "freight train",
+  "monorail", "fighter jet", "private jet", "glider", "drone", "parachute", "sailboat", "speedboat", "submarine",
+  "cruise ship", "pirate ship", "aircraft carrier", "kayak", "rowboat", "hovercraft", "carriage", "horse cart", "rickshaw", "wheelchair",
+  "stroller", "shopping cart", "elevator", "escalator", "cableway", "space shuttle", "lunar rover", "Mars rover",
+  "moped", "unicycle", "segway", "trolleybus", "gondola", "blimp", "dirt bike"
+]

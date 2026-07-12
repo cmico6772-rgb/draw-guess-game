@@ -1,0 +1,12 @@
+[
+  "football", "basketball", "tennis", "swimming", "running", "boxing", "skiing", "surfing", "golf",
+  "baseball", "volleyball", "badminton", "skateboard", "cycling", "table tennis", "rugby", "cricket", "ice hockey", "gymnastics",
+  "diving", "archery", "fencing", "bowling", "wrestling", "karate", "taekwondo", "weightlifting", "snowboarding", "fishing",
+  "horse riding", "soccer ball", "basketball hoop", "tennis racket", "boxing gloves", "golf club", "skateboard ramp", "swimming pool", "running shoes", "goalkeeper",
+  "referee", "whistle", "trophy", "medal", "stadium", "gym", "football field", "basketball court", "tennis court", "baseball bat",
+  "baseball glove", "volleyball net", "badminton shuttlecock", "ping pong paddle", "hockey stick", "ice skates", "ski goggles", "surfboard", "snowboard", "skateboard helmet",
+  "bicycle helmet", "dumbbell", "barbell", "yoga mat", "punching bag", "climbing wall", "rock climbing", "marathon", "sprint", "relay race",
+  "high jump", "long jump", "pole vault", "javelin", "discus", "shot put", "hurdles", "rowing", "sailing", "canoeing",
+  "kayaking", "water polo", "synchronized swimming", "figure skating", "speed skating", "bobsleigh", "luge", "curling", "handball", "futsal",
+  "dodgeball", "frisbee", "parkour", "cheerleading", "dance sport", "chess", "e-sports", "martial arts", "sumo", "kickboxing", "triathlon"
+]

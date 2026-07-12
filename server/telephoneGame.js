@@ -53,6 +53,7 @@ class TelephoneGame {
     this.chainPlan = [];
     this.chains = [];
     this.usedWords = new Set();
+    this.optionReservations = new Set();
     this.wordChoices = {};
     this.wordPicked = {};
     this.timerEndsAt = 0;
@@ -218,16 +219,34 @@ class TelephoneGame {
     this.room.phase = 'tel_wordselect';
     this.wordPicked = {};
     this.submissions = {};
+    // Keep options private and distinct across players without treating
+    // unchosen options as used game words.
+    this.optionReservations = new Set(this.usedWords);
     this.timerEndsAt = Date.now() + WORD_SELECT_DURATION * 1000;
 
     const category = this.room.settings && this.room.settings.category;
     this.playerOrder.forEach((pid) => {
       try {
-        const words = pickWords(3, this.usedWords, category);
+        const words = pickWords(3, this.optionReservations, category);
         this.wordChoices[pid] = words;
-        words.forEach((w) => this.usedWords.add(normalizeWordKey(w)));
-      } catch (e) {
-        this.wordChoices[pid] = pickWords(3, new Set(), category);
+        words.forEach((word) => this.optionReservations.add(normalizeWordKey(word)));
+      } catch {
+        // We tried to reserve unique options across every player. If only the
+        // reservation pool is exhausted, reuse unchosen options as a last
+        // resort while still excluding words actually used in this game.
+        let fallbackError = null;
+        try {
+          this.wordChoices[pid] = pickWords(3, this.usedWords, category);
+        } catch (error) {
+          fallbackError = error;
+          this.wordChoices[pid] = [];
+        }
+        if (fallbackError) {
+          const player = this.room.getPlayerById(pid);
+          if (player && player.socketId) {
+            this.io.to(player.socketId).emit('errorMsg', { text: fallbackError.message });
+          }
+        }
       }
       const p = this.room.getPlayerById(pid);
       if (p && p.socketId) {
@@ -268,6 +287,8 @@ class TelephoneGame {
   confirmWord(playerId, word) {
     if (this.wordPicked[playerId]) return;
     this.wordPicked[playerId] = word;
+    const key = normalizeWordKey(word);
+    if (key) this.usedWords.add(key);
     const chain = this.chains.find((c) => c.originalPlayerId === playerId);
     if (chain) chain.originalWord = word;
   }
